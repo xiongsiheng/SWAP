@@ -1,2 +1,2 @@
-# SWAP: Deliberate reasoning as structure-aware planning with accurate world model
+# SWAP: Deliberate reasoning for LLMs as structure-aware planning with accurate world model
 Under construction

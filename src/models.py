@@ -344,7 +344,7 @@ class Generator:
 
 
 
-class Discriminator():
+class Discriminator:
     def __init__(self, disc_model_id, enable_meta_knwoledge=False, show_prompt_only=False, prob_type=None):
         assert prob_type in ['math', 'logical reasoning', 'coding'], "Invalid problem type."   # In our paper, we only use these three types of problems. You can adapt to other types.
         self.enable_meta_knwoledge = enable_meta_knwoledge
@@ -375,6 +375,26 @@ class Discriminator():
         self.peft_model.eval()
 
         self.accelerator = Accelerator()
+
+
+    def _prepare_meta_knowledge(self, test_q_id):
+        with open(f'../results/MATH_similar_question_ids.json', 'r') as f:
+            data = json.load(f)
+        _filename_map = lambda name: f'../results/MATH_meta_knowledge/{name.split("/")[-1]}_meta_knowledge.json'
+        similar_filename_ls = data[test_q_id]
+        meta_knowledge = ''
+        cnt = 0
+        for file in similar_filename_ls:
+            file_mapped = _filename_map(file)
+            if not os.path.exists(file_mapped):
+                continue
+            with open(file_mapped, 'r') as f:
+                data = json.load(f)
+            meta_knowledge += '\n\n' + data['response']['Knowledge']
+            cnt += 1
+            if cnt >= 1:
+                break
+        return meta_knowledge.strip()
 
 
     def _schedule_all_comparisons(self, options):

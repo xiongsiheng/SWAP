@@ -78,27 +78,6 @@ def convert_escape_sequences(text):
 
 
 
-def prepare_external_knowledge(test_q_id):
-    with open(f'../results/MATH_algebra_similar_question_ids_meta_knowledge.json', 'r') as f:
-        data = json.load(f)
-    _filename_map = lambda name: f'../results/MATH_test_algebra_rewrite_problem_gpt_4o_from_concepts_meta_knowledge/{name.split("/")[-1]}_meta_knowledge.json'
-    similar_filename_ls = data[test_q_id]
-    external_knowledge = ''
-    cnt = 0
-    for file in similar_filename_ls:
-        file_mapped = _filename_map(file)
-        if not os.path.exists(file_mapped):
-            continue
-        with open(file_mapped, 'r') as f:
-            data = json.load(f)
-        external_knowledge += '\n\n' + data['response']['Knowledge']
-        cnt += 1
-        if cnt >= 1:
-            break
-    return external_knowledge.strip()
-
-
-
 
 def my_unicode_to_latex(text):
     unicode_to_latex = {

@@ -18,8 +18,6 @@ The structure of the file folder should be like
 ```sh
 SWAP/
 │
-├── dataset/
-│
 ├── materials/
 │
 ├── model_weights/

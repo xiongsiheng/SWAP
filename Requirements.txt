@@ -1,0 +1,6 @@
+torch==2.1.2
+transformers==4.43.3
+trl==0.9.6
+peft==0.12.0
+deepspeed==0.14.5
+datasets==2.20.0

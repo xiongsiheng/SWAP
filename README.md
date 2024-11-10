@@ -27,8 +27,22 @@ SWAP/
 └── src/
 ```
 
-## Code & Data
+## Code
 Under construction
+
+
+## Datasets
+
+All the datasets (gsm8k, MATH, FOLIO, ReClor, HumanEval, MBPP) with trajectories and process supervision can be found [here](https://huggingface.co/datasets/sxiong/SWAP).
+
+To download the dataset, install [Huggingface Datasets](https://huggingface.co/docs/datasets/quickstart) and then use the following command:
+
+```python
+from datasets import load_dataset
+dataset = load_dataset("sxiong/SWAP")
+print(dataset)
+split = dataset['train']
+```
 
 ## Contact
 If you have any inquiries, please feel free to raise an issue or reach out to sxiong45@gatech.edu.

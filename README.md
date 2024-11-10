@@ -39,7 +39,7 @@ To download the dataset, install [Huggingface Datasets](https://huggingface.co/d
 
 ```python
 from datasets import load_dataset
-dataset = load_dataset("sxiong/SWAP")
+dataset = load_dataset("sxiong/SWAP", "MATH_trajectory")
 print(dataset)
 split = dataset['train']
 ```

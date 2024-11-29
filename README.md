@@ -27,9 +27,45 @@ SWAP/
 └── src/
 ```
 
-## Code
-Under construction
+<h4> Preparation: </h4>
 
+```sh
+# git clone this repo
+
+# create a new environment with anaconda and install the necessary Python packages
+
+# install hugging face packages to load the base models and datasets
+
+# create the folders
+cd SWAP
+mkdir model_weights
+mkdir results
+mkdir materials
+cd src
+```
+
+<h4> For our SWAP framework: </h4>
+
+- Base model fine-tuning
+
+```sh
+# Train the generator
+python SFT_Generator.py --dataset MATH --subset algebra --prob_type math 
+
+# Train the semantical equivalence LoRA
+python SFT_sem_equ_LoRA.py --dataset MATH --subset algebra
+
+# Train the discriminator
+python SFT_Discriminator.py --dataset MATH --subset algebra --prob_type math --group_size 2 
+```
+
+- Inference
+
+```sh
+python main.py --dataset MATH --subset algebra --prob_type math --enable_DBM --visualize --max_steps 20 --num_rollouts 3 --num_generations 3 
+```
+
+Please check the source code for detailed parameter explanation.
 
 ## Datasets
 
@@ -43,6 +79,11 @@ dataset = load_dataset("sxiong/SWAP", "MATH_trajectory")
 print(dataset)
 split = dataset['train']
 ```
+
+## Accelerate with Multi GPUs
+The default training/inference arguments are for a single A100 (GPU memory: 80G). If you have multiple GPUs, the **training** process can be accelerated in a distributed way. Here we recommend the library of **DeepSpeed** [[docs]](https://huggingface.co/docs/peft/en/accelerate/deepspeed).
+
+Also, you can accelerate the **inference** with multiple GPUs.
 
 ## Contact
 If you have any inquiries, please feel free to raise an issue or reach out to sxiong45@gatech.edu.

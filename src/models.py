@@ -112,7 +112,7 @@ class Generator:
         '''
         assert prob_type in ['math', 'logical reasoning', 'coding'], "Invalid problem type."   # We mainly test these types of problems. You can adapt to other types.
         self.enable_DBM = enable_DBM
-        self.show_prompt_only = show_prompt_only
+        self.show_prompt_only = show_prompt_only  # For debugging purposes
         self.prob_type = prob_type
         if not show_prompt_only:
             self._build_model(gen_model_id, sem_model_id, model_name)
@@ -511,6 +511,7 @@ class Generator:
                     sample['rollout'][rollout_id]['prompt'] = f"{sample['rollout'][rollout_id]['prompt'].strip()}\n"
 
                 if self.show_prompt_only:
+                    # For debugging purposes
                     print(sample['rollout'][rollout_id]['prompt'])
                     print('-------------------')
                     continue
@@ -556,7 +557,7 @@ class Discriminator():
         '''
         assert prob_type in ['math', 'logical reasoning', 'coding'], "Invalid problem type."   # We mainly test these types of problems. You can adapt to other types.
         self.use_meta_knwoledge = use_meta_knwoledge
-        self.show_prompt_only = show_prompt_only
+        self.show_prompt_only = show_prompt_only  # For debugging purposes
         self.prob_type = prob_type
         if not show_prompt_only:
             self._build_model(disc_model_id, model_name)
@@ -595,7 +596,7 @@ class Discriminator():
         self.accelerator = Accelerator()
 
 
-    def _schedule_all_comparisons(self, options):
+    def _schedule_all_comparisons(self, options, group_size=3):
         """
         Schedules all possible comparisons with up to 3 options.
         Each comparison is between 2 or 3 options.
@@ -611,8 +612,9 @@ class Discriminator():
         # Schedule all possible 2-option comparisons
         comparisons.extend(list(itertools.combinations(options, 2)))
         
-        # Schedule all possible 3-option comparisons
-        comparisons.extend(list(itertools.combinations(options, 3)))
+        if group_size > 2:
+            # Schedule all possible 3-option comparisons
+            comparisons.extend(list(itertools.combinations(options, 3)))
         
         return [list(comparison) for comparison in comparisons]
 
@@ -831,7 +833,7 @@ class Discriminator():
         return flag_correct
 
 
-    def inference(self, output_dir, meta_knowledge_path, rollout_id, batch_size, max_future_len, cmp_per_opt, deduplicate=True, 
+    def inference(self, output_dir, meta_knowledge_path, rollout_id, batch_size, max_future_len, cmp_per_opt, group_size, deduplicate=True, 
                   visualize=False, final_agg=False):
         '''
         Perform inference on the given dataset.
@@ -843,6 +845,7 @@ class Discriminator():
             batch_size (int): The batch size to use for inference.
             max_future_len (int): The maximum length of the future steps.
             cmp_per_opt (int): The number of comparisons per option.
+            group_size (int): The number of options in each comparison.
             deduplicate (bool): Whether to deduplicate the responses.
             visualize (bool): Whether to visualize the results.
             final_agg (bool): Whether to perform final aggregation.
@@ -908,8 +911,7 @@ class Discriminator():
 
             if num_options == 0:
                 continue
-
-            if num_options < 2:
+            elif num_options == 1:
                 if final_agg: 
                     sample['flag_correct'] = self._judge_final_answer(responses[0], sample['answer'])
                 self._post_process(sample, rollout_id, responses[0], None, output_dir, filename)
@@ -920,11 +922,11 @@ class Discriminator():
                 meta_knowledge = self._prepare_meta_knowledge(meta_knowledge_path, sample['id'])
 
 
-            comparisons = self._schedule_random_comparisons(options, cmp_per_opt)
+            comparisons = self._schedule_random_comparisons(options, cmp_per_opt, group_size)
             prompts = [f'{instruction}\n ### Input: \n{prepare_prompt_for_disciminator(problem, context, [option.description for option in cur_batch], [option.future for option in cur_batch], meta_knowledge, future_range=range(max_future_len))}\n ### Output: \n' for cur_batch in comparisons]
 
-
             if self.show_prompt_only:
+                # For debugging purposes
                 for prompt in prompts:
                     print(prompt)
                     print('------------------------------------------')

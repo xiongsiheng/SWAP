@@ -33,10 +33,10 @@ parser.add_argument('--dataset', default='MATH')
 parser.add_argument('--subset', default='algebra')
 
 
-parser.add_argument('--train', type=bool, default=True) # whether to train the model
+parser.add_argument('--train', action='store_true') # whether to train the model
 
-parser.add_argument('--print_example', type=bool, default=True) # whether to print the example
-parser.add_argument('--use_wandb', type=bool, default=False) # whether to use wandb
+parser.add_argument('--print_example', action='store_true') # whether to print the example
+parser.add_argument('--use_wandb', action='store_true') # whether to use wandb
 
 parser.add_argument('--output_dir', default='../model_weights') # the output directory for the model
 

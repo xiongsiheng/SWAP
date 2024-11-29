@@ -15,9 +15,9 @@ parser.add_argument('--subset', default='algebra')
 parser.add_argument('--prob_type', default='math')  # 'math', 'logical reasoning', 'coding'
 
 
-parser.add_argument('--enable_DBM', type=bool, default=True)  # whether enable diversity-based modelling for generator
-parser.add_argument('--use_meta_knowledge', type=bool, default=True)  # whether use meta-knowledge for discriminator
-parser.add_argument('--visualize', type=bool, default=False)  # whether visualize the language model output
+parser.add_argument('--enable_DBM', action='store_true')  # whether enable diversity-based modelling for generator
+parser.add_argument('--use_meta_knowledge', action='store_true')  # whether use meta-knowledge for discriminator
+parser.add_argument('--visualize', action='store_true')  # whether visualize the language model output
 
 
 parser.add_argument('--output_dir', default='../results/test_MATH_algebra_llama3_8B')  # the output directory for inference results
@@ -29,6 +29,7 @@ parser.add_argument('--max_steps', type=int, default=20)  # the maximum number o
 parser.add_argument('--num_rollouts', type=int, default=8)  # the number of rollouts for each problem
 parser.add_argument('--num_generations', type=int, default=5)  # the number of generations for each step
 parser.add_argument('--cmp_per_opt', type=int, default=1)  # the number of comparisons per option
+parser.add_argument('--group_size', type=int, default=3) # the group size for single-time comparison (recommend: 2 or 3)
 
 parser.add_argument('--batch_size_gen', type=int, default=24)  # the batch size for generator
 parser.add_argument('--batch_size_disc', type=int, default=12)  # the batch size for discriminator
@@ -43,7 +44,7 @@ args = parser.parse_args()
 
 
 def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_model_id, meta_knowledge_path, max_steps=20, num_rollouts=8, num_generations=5, 
-         cmp_per_opt=1, batch_size_gen=24, batch_size_disc=12, enable_DBM=True, use_meta_knowledge=True, visualize=False):
+         cmp_per_opt=1, group_size=3, batch_size_gen=24, batch_size_disc=12, enable_DBM=True, use_meta_knowledge=True, visualize=False):
     '''
     Run the workflow of SWAP.
 
@@ -59,6 +60,7 @@ def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_mo
         num_rollouts (int): The number of rollouts for each problem.
         num_generations (int): The number of generations for each step.
         cmp_per_opt (int): The number of comparisons per option.
+        group_size (int): The group size for single-time comparison.
         batch_size_gen (int): The batch size for generator.
         batch_size_disc (int): The batch size for discriminator.
         enable_DBM (bool): Whether enable diversity-based modelling for generator.
@@ -95,7 +97,7 @@ def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_mo
             
             # Initialize Discriminator and perform inference
             agent_disc = Discriminator(dis_model_id, model_name, use_meta_knwoledge=use_meta_knowledge, prob_type=prob_type)
-            agent_disc.inference(output_dir, meta_knowledge_path, str(rollout_id), batch_size_disc, num_future_steps[cnt], cmp_per_opt, visualize=visualize)
+            agent_disc.inference(output_dir, meta_knowledge_path, str(rollout_id), batch_size_disc, num_future_steps[cnt], cmp_per_opt, group_size, visualize=visualize)
             
             # Delete Discriminator instance to free memory
             del agent_disc
@@ -105,7 +107,7 @@ def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_mo
     
     # Perform final aggregation for all rollouts.
     agent_disc = Discriminator(dis_model_id, model_name, use_meta_knwoledge=use_meta_knowledge, prob_type=prob_type)
-    agent_disc.inference(output_dir, meta_knowledge_path, "Agg", batch_size_disc, 0, cmp_per_opt, visualize=visualize, final_agg=True)
+    agent_disc.inference(output_dir, meta_knowledge_path, "Agg", batch_size_disc, 0, cmp_per_opt, group_size, visualize=visualize, final_agg=True)
 
 
 
@@ -130,16 +132,17 @@ def build_dataset(args):
                 continue
         del sample['trajectory'], sample['label']
         dataset_filtered.append(sample)
-
-    dataset_filtered = dataset_filtered[:3]
     dataset_test = Dataset.from_list(dataset_filtered)
     
     meta_knowledge_path = f'../materials/{args.dataset}_{args.subset}_meta_knowledge'
     return dataset_test, meta_knowledge_path
 
 
+
 if __name__ == '__main__':
     dataset_test, meta_knowledge_path = build_dataset(args)
-    SWAP(args.prob_type, dataset_test, args.output_dir, args.gen_model_id, args.sem_model_id, args.dis_model_id, meta_knowledge_path, max_steps=args.max_steps, 
-         num_rollouts=args.num_rollouts, num_generations=args.num_generations, cmp_per_opt=args.cmp_per_opt, batch_size_gen=args.batch_size_gen, 
-         batch_size_disc=args.batch_size_disc, enable_DBM=args.enable_DBM, use_meta_knowledge=args.use_meta_knowledge, visualize=args.visualize)
+
+    SWAP(args.prob_type, dataset_test, args.output_dir, args.gen_model_id, args.sem_model_id, args.dis_model_id, meta_knowledge_path, 
+         max_steps=args.max_steps, num_rollouts=args.num_rollouts, num_generations=args.num_generations, cmp_per_opt=args.cmp_per_opt, 
+         group_size=args.group_size, batch_size_gen=args.batch_size_gen, batch_size_disc=args.batch_size_disc, enable_DBM=args.enable_DBM, 
+         use_meta_knowledge=args.use_meta_knowledge, visualize=args.visualize)

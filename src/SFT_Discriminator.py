@@ -34,12 +34,12 @@ parser.add_argument('--subset', default='algebra')
 parser.add_argument('--prob_type', default='math') # 'math', 'logical reasoning', 'coding'
 parser.add_argument('--group_size', type=int, default=3) # the group size for single-time comparison (recommend: 2 or 3)
 
-parser.add_argument('--train', type=bool, default=True)  # whether to train the model
-parser.add_argument('--use_graph', type=bool, default=False) # whether to use the graph for reasoning
-parser.add_argument('--use_meta_knowledge', type=bool, default=False) # whether to use meta-knowledge for discriminator
+parser.add_argument('--train', action='store_true')  # whether to train the model
+parser.add_argument('--use_graph', action='store_true') # whether to use the graph for reasoning
+parser.add_argument('--use_meta_knowledge', action='store_true') # whether to use meta-knowledge for discriminator
 
-parser.add_argument('--print_example', default=True) # whether to print the example
-parser.add_argument('--use_wandb', default=False) # whether to use wandb
+parser.add_argument('--print_example', action='store_true') # whether to print the example
+parser.add_argument('--use_wandb', action='store_true') # whether to use wandb
 
 parser.add_argument('--output_dir', default='../model_weights') # the output directory for the model
 

@@ -10,6 +10,18 @@ SWAP consists of three main components: the policy model $M_{\pi}$, the world mo
   <img src='https://raw.githubusercontent.com/xiongsiheng/SWAP/main/misc/Framework.png' width=650>
 </p>
 
+<br>
+
+SWAP performs multi-step reasoning through structure-aware planning in FOLIO (left) and MATH (right). At each step, given the current state, represented as a graph, and an action, the world model predicts the next state as an updated graph.
+
+<br>
+<p align="center">
+  <img src='https://raw.githubusercontent.com/xiongsiheng/SWAP/main/misc/Example_tree_search.png' width=650>
+</p>
+
+
+
+
 
 ## Quick Start
 We use [Hugging Face](https://huggingface.co/) platform to load the Llama3 model family. Make sure you have an account ([Guidance](https://huggingface.co/blog/llama3)).

@@ -50,19 +50,19 @@ cd src
 
 ```sh
 # Train the generator
-python SFT_Generator.py --dataset MATH --subset algebra --prob_type math 
+python SFT_Generator.py --dataset MATH --subset algebra --prob_type math --train --print_example
 
 # Train the semantical equivalence LoRA
-python SFT_sem_equ_LoRA.py --dataset MATH --subset algebra
+python SFT_sem_equ_LoRA.py --dataset MATH --subset algebra --train --print_example
 
 # Train the discriminator
-python SFT_Discriminator.py --dataset MATH --subset algebra --prob_type math --group_size 2 
+python SFT_Discriminator.py --dataset MATH --subset algebra --prob_type math --group_size 2 --train --print_example 
 ```
 
 - Inference
 
 ```sh
-python main.py --dataset MATH --subset algebra --prob_type math --enable_DBM --visualize --max_steps 20 --num_rollouts 3 --num_generations 3 
+python main.py --dataset MATH --subset algebra --prob_type math --enable_DBM --visualize --max_steps 20 --num_rollouts 3 --num_generations 3 --group_size 2
 ```
 
 Please check the source code for detailed parameter explanation.

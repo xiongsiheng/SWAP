@@ -52,7 +52,6 @@ SWAP/
 cd SWAP
 mkdir model_weights
 mkdir results
-mkdir materials
 cd src
 ```
 

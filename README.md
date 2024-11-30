@@ -24,7 +24,7 @@ SWAP performs multi-step reasoning through structure-aware planning in FOLIO (le
 
 
 ## Quick Start
-We use [Hugging Face](https://huggingface.co/) platform to load the Llama3 model family. Make sure you have an account ([Guidance](https://huggingface.co/blog/llama3)).
+We use [Hugging Face](https://huggingface.co/) platform to load the Llama3 and Mistral models. Make sure you have an account ([Guidance](https://huggingface.co/blog/llama3)).
 
 The structure of the file folder should be like
 ```sh

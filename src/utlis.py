@@ -1,6 +1,6 @@
 import json
 from itertools import islice
-
+import re
 
 
 
@@ -306,3 +306,52 @@ def parse_boxed_result(s):
         content.append(s[i])
     
     return s
+
+
+def check_graph_structure(graph):
+    '''
+    Check the graph structure.
+    '''
+    def has_only_certain_keys(d):
+        required_keys = {'Statement', 'Entailment'}
+        return set(d.keys()) == required_keys
+    
+    def are_elements_in_form(ls):
+        pattern = re.compile(r'^s[1-9]\d*$')  # Matches strings like s1, s2, s10, etc.
+        return all(pattern.match(ele) for ele in ls)
+    
+    def extract_number(s):
+        match = re.search(r'\d+', s)
+        return int(match.group()) if match else 0
+
+    def all_elements_smaller(list1, element2):
+        # Extract numeric parts and compare
+        num2 = extract_number(element2)
+        return all(extract_number(elem) < num2 for elem in list1)
+
+    # Check if the graph has only the required keys
+    if not has_only_certain_keys(graph):
+        return False
+    
+    # Check if the keys in Statement are in the correct form
+    if not are_elements_in_form(graph['Entailment'].keys()):
+        return False
+    
+    # Check if the keys in Statement and Entailment are the same
+    if set(graph['Statement'].keys()) != set(graph['Entailment'].keys()):
+        return False
+    
+    for key in graph['Statement']:
+        # check if the value is a string
+        if not isinstance(graph['Statement'][key], str):
+            return False
+        # check if the value is recognizable strings or a list of strings in the correct form
+        if graph['Entailment'][key] not in ['Given condition', 'Assumption', 'Fact', 'Rule', 'Evidence'] and not isinstance(graph['Entailment'][key], list):
+            return False
+
+        if isinstance(graph['Entailment'][key], list):
+            if are_elements_in_form(graph['Entailment'][key]):
+                return False
+            if not all_elements_smaller(graph['Entailment'][key], key):
+                return False
+    return True

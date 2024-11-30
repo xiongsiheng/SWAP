@@ -672,34 +672,34 @@ class Discriminator():
         return sorted(options, key=lambda x: x.score, reverse=True)
 
 
-    def _prepare_meta_knowledge(meta_knowledge_path, test_q_id):
+    def _prepare_meta_knowledge(meta_knowledge_path, test_q_id, num_references=1):
         '''
         Prepare the meta-knowledge for the given test question ID.
 
         Args:
             meta_knowledge_path (str): The path to the meta-knowledge.
             test_q_id (str): The test question ID.
+            num_references (int): The number of references to include.
 
         Returns:
-            external_knowledge (str): The external knowledge for the test question.
+            meta_knowledge (str): The meta knowledge for the test question.
         '''
         with open(f'{meta_knowledge_path}/similar_question_ids.json', 'r') as f:
             data = json.load(f)
-        _filename_map = lambda name: f'{meta_knowledge_path}/{name.split("/")[-1]}.json'
         similar_filename_ls = data[test_q_id]
-        external_knowledge = ''
+        meta_knowledge = ''
         cnt = 0
         for file in similar_filename_ls:
-            file_mapped = _filename_map(file)
+            file_mapped = f'{meta_knowledge_path}/{file}.json'
             if not os.path.exists(file_mapped):
                 continue
             with open(file_mapped, 'r') as f:
                 data = json.load(f)
-            external_knowledge += '\n\n' + data['response']['Knowledge']
+            meta_knowledge += '\n\n' + data['Knowledge']
             cnt += 1
-            if cnt >= 1:
+            if cnt >= num_references:
                 break
-        return external_knowledge.strip()
+        return meta_knowledge.strip()
 
 
     def _post_process(self, data, rollout_id, selected_option, disc_data, output_dir, filename=None):
@@ -834,7 +834,7 @@ class Discriminator():
 
 
     def inference(self, output_dir, meta_knowledge_path, rollout_id, batch_size, max_future_len, cmp_per_opt, group_size, deduplicate=True, 
-                  visualize=False, final_agg=False):
+                  visualize=False, final_agg=False, structure_check=False):
         '''
         Perform inference on the given dataset.
 
@@ -849,6 +849,7 @@ class Discriminator():
             deduplicate (bool): Whether to deduplicate the responses.
             visualize (bool): Whether to visualize the results.
             final_agg (bool): Whether to perform final aggregation.
+            structure_check (bool): Whether to check the structure of the responses.
 
         Returns:
             None
@@ -906,6 +907,19 @@ class Discriminator():
                 futures = list(unique_responses.values())
 
 
+            if structure_check:
+                # Filter out responses that have incorrect structure
+                responses_filtered = []
+                futures_filtered = []
+                for response, future in zip(responses, futures):
+                    if 'graph' not in response.split(':')[0].lower() or check_graph_structure(eval(response.split(':')[1])):
+                        responses_filtered.append(response)
+                        futures_filtered.append(future)
+
+                responses = responses_filtered
+                futures = futures_filtered
+                
+                
             options = [Option(i, responses[i], futures[i]) for i in range(len(responses))]
             num_options = len(responses)
 

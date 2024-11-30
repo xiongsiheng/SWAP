@@ -17,6 +17,7 @@ parser.add_argument('--prob_type', default='math')  # 'math', 'logical reasoning
 
 parser.add_argument('--enable_DBM', action='store_true')  # whether enable diversity-based modelling for generator
 parser.add_argument('--use_meta_knowledge', action='store_true')  # whether use meta-knowledge for discriminator
+parser.add_argument('--structure_check', action='store_true')  # whether check the structure of the reasoning process
 parser.add_argument('--visualize', action='store_true')  # whether visualize the language model output
 
 
@@ -44,7 +45,7 @@ args = parser.parse_args()
 
 
 def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_model_id, meta_knowledge_path, max_steps=20, num_rollouts=8, num_generations=5, 
-         cmp_per_opt=1, group_size=3, batch_size_gen=24, batch_size_disc=12, enable_DBM=True, use_meta_knowledge=True, visualize=False):
+         cmp_per_opt=1, group_size=3, batch_size_gen=24, batch_size_disc=12, enable_DBM=True, use_meta_knowledge=True, structure_check=True, visualize=False):
     '''
     Run the workflow of SWAP.
 
@@ -65,6 +66,7 @@ def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_mo
         batch_size_disc (int): The batch size for discriminator.
         enable_DBM (bool): Whether enable diversity-based modelling for generator.
         use_meta_knowledge (bool): Whether use meta-knowledge for discriminator.
+        structure_check (bool): Whether check the structure of the reasoning process.
         visualize (bool): Whether visualize the language model output.
 
     Returns:
@@ -97,7 +99,8 @@ def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_mo
             
             # Initialize Discriminator and perform inference
             agent_disc = Discriminator(dis_model_id, model_name, use_meta_knwoledge=use_meta_knowledge, prob_type=prob_type)
-            agent_disc.inference(output_dir, meta_knowledge_path, str(rollout_id), batch_size_disc, num_future_steps[cnt], cmp_per_opt, group_size, visualize=visualize)
+            agent_disc.inference(output_dir, meta_knowledge_path, str(rollout_id), batch_size_disc, num_future_steps[cnt], cmp_per_opt, group_size, 
+                                 structure_check=structure_check, visualize=visualize)
             
             # Delete Discriminator instance to free memory
             del agent_disc
@@ -145,4 +148,4 @@ if __name__ == '__main__':
     SWAP(args.prob_type, dataset_test, args.output_dir, args.gen_model_id, args.sem_model_id, args.dis_model_id, meta_knowledge_path, 
          max_steps=args.max_steps, num_rollouts=args.num_rollouts, num_generations=args.num_generations, cmp_per_opt=args.cmp_per_opt, 
          group_size=args.group_size, batch_size_gen=args.batch_size_gen, batch_size_disc=args.batch_size_disc, enable_DBM=args.enable_DBM, 
-         use_meta_knowledge=args.use_meta_knowledge, visualize=args.visualize)
+         use_meta_knowledge=args.use_meta_knowledge, structure_check=args.structure_check, visualize=args.visualize)

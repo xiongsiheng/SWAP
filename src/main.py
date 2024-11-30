@@ -137,7 +137,7 @@ def build_dataset(args):
         dataset_filtered.append(sample)
     dataset_test = Dataset.from_list(dataset_filtered)
     
-    meta_knowledge_path = f'../materials/{args.dataset}_{args.subset}_meta_knowledge'
+    meta_knowledge_path = f'../materials/meta_knowledge/{args.dataset}_{args.subset}'
     return dataset_test, meta_knowledge_path
 
 

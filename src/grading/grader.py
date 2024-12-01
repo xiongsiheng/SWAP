@@ -1,5 +1,5 @@
 """
-Answer checker API that uses sympy to simplify expressions and check for equality.
+Answer checker that uses sympy to simplify expressions and check for equality.
 
 Call grade_answer(given_answer: str, ground_truth: str).
 """
@@ -286,80 +286,6 @@ def grade_answer(given_answer: str, ground_truth: str) -> bool:
 
     return is_correct
 
+
 if __name__ == "__main__":
-    #test cases
-    
-    import pandas as pd
-    df = pd.read_csv('../results/result_initial/deep_seek_test_case.csv')
-    
-    def parse_boxed_result(s):
-        # Find the start of the boxed content
-        start = s.find('\\boxed{')
-        if start == -1:
-            return None
-
-        # Skip past '\\boxed{' to start content capture
-        start += len('\\boxed{')
-        brace_count = 1  # We start after finding the first '{'
-        content = []
-
-        # Iterate over the string starting after '\boxed{'
-        for i in range(start, len(s)):
-            if s[i] == '{':
-                brace_count += 1
-            elif s[i] == '}':
-                brace_count -= 1
-
-            # If brace_count returns to 0, we've found the matching '}'
-            if brace_count == 0:
-                return ''.join(content)
-            content.append(s[i])
-
-        return None
-    
-    def validate_result(text, ground_truth):
-    # Regular expression to extract the boxed result and get the number
-        if not isinstance(text, str):
-            return False
-        boxed_result = parse_boxed_result(text)
-        gt_result = parse_boxed_result(ground_truth)
-        if boxed_result == gt_result:
-            return True
-        else:
-            return False
-    
-    cnt = 0
-    cnt_correct = 0
-    for q, gt, pred in zip(df['problem'], df['solution'], df['deepseeK_direct_solution']):
-        #print(q)
-        #print(gt)
-        #print(pred)
-        pred =str(pred)
-        gt = str(gt)
-        flag_correct = validate_result(pred, gt)
-
-        
-        cnt_correct += flag_correct
-
-        cnt += 1
-    print("Total number of correct answers:-by no grade_answer API")
-    print(cnt_correct, cnt)
-
-    cnt = 0
-    cnt_correct = 0
-    for q, gt, pred in zip(df['problem'], df['solution'], df['deepseeK_direct_solution']):
-        #print(q)
-        #print(gt)
-        #print(pred)
-        pred =str(pred)
-        gt = str(gt)
-        pred = parse_boxed_result(pred)
-        gt = parse_boxed_result(gt)
-        flag_correct = grade_answer(pred, gt)
-
-        
-        cnt_correct += flag_correct
-
-        cnt += 1
-    print("Total number of correct answers:-by grade_answer API")
-    print(cnt_correct, cnt)
+    pass

@@ -1,6 +1,6 @@
 from models import Generator, Discriminator
 from datasets import Dataset, load_dataset
-from utlis import *
+from utils import *
 import gc
 import sys
 import argparse

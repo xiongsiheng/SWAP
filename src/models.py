@@ -13,7 +13,7 @@ from accelerate import Accelerator
 from accelerate.utils import gather_object
 from peft import PeftModel
 
-from utlis import *
+from utils import *
 from prompt_generation import *
 from grading.grader import grade_answer
 

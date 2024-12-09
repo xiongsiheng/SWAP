@@ -41,6 +41,37 @@ def generate_prompt_for_generator(prob_type, question, trajectory, eos_token="",
 
 
 
+def generate_prompt_for_generator_DPO(prompt, chosen, rejected, use_graph=True):
+    '''
+    Generate the prompt for the generator.
+
+    Args:
+        prompt (str): The prompt.
+        chosen (str): The chosen option.
+        rejected (str): The rejected option.
+        use_graph (bool): Whether to use the graph format.
+
+    Returns:
+        prompt (str): The prompt.
+    '''
+
+    chosen = convert_dict_format(eval(chosen), use_graph=use_graph)
+    rejected = convert_dict_format(eval(rejected), use_graph=use_graph)
+    
+    # Append the output to the prompt
+    prompt += f"{prompt}\n\n{chosen}\n\n{rejected}"
+    
+    # Replace unwanted escape characters with their respective representations
+    prompt = prompt.replace('\x0c', '\f') \
+                .replace('\x07', '\a') \
+                .replace('\x08', '\b') \
+                .replace('\x0b', '\v') \
+                .replace('\x0d', '\r') \
+                .replace('\x0a', '\n')
+    
+    return prompt
+
+
 
 def obtain_sem_equ_data(samples, allow_ori_sen=True):
     '''

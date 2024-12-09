@@ -4,7 +4,7 @@ import argparse
 
 
 from datasets import load_dataset
-from trl import DPOConfig, DPOTrainer
+from trl import DPOConfig, DPOTrainer, PreferenceCollator
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import wandb
 import torch
@@ -96,22 +96,11 @@ def print_examples(dataset, args):
         args (argparse.Namespace): Command-line arguments.
     """
     for i in range(5):
-        sample = dataset[i]['chosen']
-        prompt = generate_prompt_for_generator(
-                    args.prob_type, 
-                    sample['question'], 
-                    sample['trajectory'], 
-                    eos_token="<|eot_id|>", 
-                    use_graph=args.use_graph
-                )
-        print(prompt)
-        print('-------------------------------')
-        sample = dataset[i]['rejected']
-        prompt = generate_prompt_for_generator(
-                    args.prob_type, 
-                    sample['question'], 
-                    sample['trajectory'], 
-                    eos_token="<|eot_id|>", 
+        sample = dataset[i]
+        prompt = generate_prompt_for_generator_DPO(
+                    sample['prompt'], 
+                    sample['chosen'], 
+                    sample['rejected'], 
                     use_graph=args.use_graph
                 )
         print(prompt)
@@ -129,6 +118,7 @@ def load_model_and_tokenizer(model_name, output_dir_sft):
     """
     # load the model and tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.add_special_tokens({"pad_token": "<PAD>"})
     
     # Load the base model.
     model = AutoModelForCausalLM.from_pretrained(
@@ -137,6 +127,7 @@ def load_model_and_tokenizer(model_name, output_dir_sft):
         device_map="auto",
     )
     model.config.use_cache = False
+    model.resize_token_embeddings(len(tokenizer))
 
     # Load the adapter.
     model = PeftModel.from_pretrained(
@@ -151,7 +142,7 @@ def load_model_and_tokenizer(model_name, output_dir_sft):
     return model, tokenizer
 
 
-def DPO_with_LoRA(model, tokenizer, output_dir, data_train, data_val, batch_size, max_seq_length, resume_from_checkpoint=None):
+def DPO_with_LoRA(model, tokenizer, output_dir, data_train, data_val, batch_size, max_seq_length, resume_from_checkpoint=None, collator=None):
     """
     Trains a model with LoRA (Low-Rank Adaptation) for Directed Preference Optimization (DPO).
         Args:
@@ -163,6 +154,7 @@ def DPO_with_LoRA(model, tokenizer, output_dir, data_train, data_val, batch_size
         batch_size (int): Batch size for training.
         max_seq_length (int): Maximum sequence length for input.
         resume_from_checkpoint (str, optional): Path to resume training from.
+        collator (Callable, optional): Function to format the input data.
     """
 
     # Initialize the trainer, without a ref_model param.
@@ -173,11 +165,12 @@ def DPO_with_LoRA(model, tokenizer, output_dir, data_train, data_val, batch_size
         ref_adapter_name="reference",
         resume_from_checkpoint=resume_from_checkpoint,
         logging_steps=10,
-        num_train_epochs=3
+        num_train_epochs=3,
+        max_length=max_seq_length
     )
 
-    dpo_trainer = DPOTrainer(model=model, args=training_args, processing_class=tokenizer, train_dataset=data_train, val_dataset=data_val,
-                             max_seq_length=max_seq_length)
+    dpo_trainer = DPOTrainer(model=model, args=training_args, processing_class=tokenizer, train_dataset=data_train, eval_dataset=data_val, 
+                             data_collator=collator)
     dpo_trainer.train()
     dpo_trainer.save_model(f"{output_dir}/final")
 
@@ -211,7 +204,8 @@ def main():
     
     # Train the model
     if args.train:
-        DPO_with_LoRA(model, tokenizer, output_dir_dpo, dataset_train, dataset_val, args.batch_size, args.max_seq_len, args.resume_frome)
+        collator = PreferenceCollator(pad_token_id=len(tokenizer)-1)
+        DPO_with_LoRA(model, tokenizer, output_dir_dpo, dataset_train, dataset_val, args.batch_size, args.max_seq_len, args.resume_frome, collator)
 
 
 

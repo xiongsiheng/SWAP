@@ -62,6 +62,8 @@ cd src
 ```sh
 # Train the generator
 python SFT_Generator.py --dataset MATH --subset algebra --prob_type math --train --print_example
+# (Optional)
+python DPO_Generator.py --dataset MATH --subset algebra --prob_type math --train --print_example
 
 # Train the semantical equivalence LoRA
 python SFT_sem_equ_LoRA.py --dataset MATH --subset algebra --train --print_example

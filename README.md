@@ -12,7 +12,7 @@ SWAP consists of three main components: the policy model $M_{\pi}$, the world mo
 
 <br>
 
-SWAP performs multi-step reasoning through structure-aware planning in FOLIO (left) and MATH (right). At each step, given the current state, represented as a graph, and an action, the world model predicts the next state as an updated graph.
+SWAP performs multi-step reasoning through structure-aware planning in FOLIO (left) and MATH (right). At each step, given the current state, represented as a graph, and an action, the world model predicts the next state as an updated graph. The policy model is guided by this graph to propose next action.
 
 <br>
 <p align="center">

@@ -308,7 +308,7 @@ def parse_boxed_result(s):
     return s
 
 
-def check_graph_structure(graph):
+def check_graph_structure(graph, print_error_type=False):
     '''
     Check the graph structure.
     '''
@@ -331,27 +331,45 @@ def check_graph_structure(graph):
 
     # Check if the graph has only the required keys
     if not has_only_certain_keys(graph):
+        if print_error_type:
+            print('Error type: Keys in the graph are not in the correct form.')
         return False
     
     # Check if the keys in Statement are in the correct form
     if not are_elements_in_form(graph['Entailment'].keys()):
+        if print_error_type:
+            print('Error type: Keys in Entailment are not in the correct form.')
         return False
     
     # Check if the keys in Statement and Entailment are the same
     if set(graph['Statement'].keys()) != set(graph['Entailment'].keys()):
+        if print_error_type:
+            print('Error type: Keys in Statement and Entailment do not match.')
         return False
     
     for key in graph['Statement']:
         # check if the value is a string
         if not isinstance(graph['Statement'][key], str):
+            if print_error_type:
+                print('Error type: Values in Statement are not strings.')
             return False
         # check if the value is recognizable strings or a list of strings in the correct form
-        if graph['Entailment'][key] not in ['Given condition', 'Assumption', 'Fact', 'Rule', 'Evidence'] and not isinstance(graph['Entailment'][key], list):
+        if graph['Entailment'][key] not in ['Given condition', 'Fact', 'Assumption'] and not isinstance(graph['Entailment'][key], list):
+            if print_error_type:
+                print('Error type: Values in Entailment are not in the correct form.')
             return False
 
         if isinstance(graph['Entailment'][key], list):
-            if are_elements_in_form(graph['Entailment'][key]):
+            if len(graph['Entailment'][key]) == 0:
+                if print_error_type:
+                    print('Error type: Values in Entailment List are empty.')
+                return False
+            if not are_elements_in_form(graph['Entailment'][key]):
+                if print_error_type:
+                    print('Error type: Values in Entailment List are not in the correct form.')
                 return False
             if not all_elements_smaller(graph['Entailment'][key], key):
+                if print_error_type:
+                    print('Error type: Values in Entailment List should be smaller than the key.')
                 return False
     return True

@@ -103,10 +103,24 @@ If you have any inquiries, please feel free to raise an issue or reach out to sx
 
 ## Citation
 ```
-@article{xiong2024deliberate,
-  title={Deliberate Reasoning for LLMs as Structure-aware Planning with Accurate World Model},
-  author={Xiong, Siheng and Payani, Ali and Yang, Yuan and Fekri, Faramarz},
-  journal={arXiv preprint arXiv:2410.03136},
-  year={2024}
+@inproceedings{xiong-etal-2025-deliberate,
+    title = "Deliberate Reasoning in Language Models as Structure-Aware Planning with an Accurate World Model",
+    author = "Xiong, Siheng  and
+      Payani, Ali  and
+      Yang, Yuan  and
+      Fekri, Faramarz",
+    editor = "Che, Wanxiang  and
+      Nabende, Joyce  and
+      Shutova, Ekaterina  and
+      Pilehvar, Mohammad Taher",
+    booktitle = "Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
+    month = jul,
+    year = "2025",
+    address = "Vienna, Austria",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2025.acl-long.1540/",
+    doi = "10.18653/v1/2025.acl-long.1540",
+    pages = "31900--31931",
+    ISBN = "979-8-89176-251-0"
 }
 ```

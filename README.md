@@ -1,6 +1,6 @@
-# SWAP: Deliberate Reasoning for LLMs as Structure-aware Planning with Accurate World Model
+# SWAP: Deliberate Reasoning in Language Models as Structure-Aware Planning with an Accurate World Model
 
-This repository contains the code for the paper [Deliberate Reasoning for LLMs as Structure-aware Planning with Accurate World Model](https://arxiv.org/pdf/2410.03136).
+This repository contains the code for the paper [ACL 25 (main)] [Deliberate Reasoning in Language Models as Structure-Aware Planning with an Accurate World Model](https://arxiv.org/pdf/2410.03136).
 
 SWAP consists of three main components: the policy model $M_{\pi}$, the world model $M_{\text{wm}}$, and the controller $M_\text{c}$. Starting with the goal $G$ and the initial state $(s_0, g_0)$, the policy model $M_{\pi}$ generates an optimized plan $H$. Using $G$, $H$, and the current state $(s_t, g_t)$, $M_{\pi}$ proposes the next action $a_t$ through deliberate planning. After the action is chosen, the world model $M_{\text{wm}}$ predicts the next state $s_{t+1}$ and updates the entailment graph $g_{t+1}$. Finally, based on $G$ and the updated state $(s_{t+1}, g_{t+1})$, the controller $M_c$ decides whether to continue the process or output the final answer.
 
@@ -101,10 +101,24 @@ If you have any inquiries, please feel free to raise an issue or reach out to sx
 
 ## Citation
 ```
-@article{xiong2024deliberate,
-  title={Deliberate Reasoning for LLMs as Structure-aware Planning with Accurate World Model},
-  author={Xiong, Siheng and Payani, Ali and Yang, Yuan and Fekri, Faramarz},
-  journal={arXiv preprint arXiv:2410.03136},
-  year={2024}
+@inproceedings{xiong-etal-2025-deliberate,
+    title = "Deliberate Reasoning in Language Models as Structure-Aware Planning with an Accurate World Model",
+    author = "Xiong, Siheng  and
+      Payani, Ali  and
+      Yang, Yuan  and
+      Fekri, Faramarz",
+    editor = "Che, Wanxiang  and
+      Nabende, Joyce  and
+      Shutova, Ekaterina  and
+      Pilehvar, Mohammad Taher",
+    booktitle = "Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
+    month = jul,
+    year = "2025",
+    address = "Vienna, Austria",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2025.acl-long.1540/",
+    doi = "10.18653/v1/2025.acl-long.1540",
+    pages = "31900--31931",
+    ISBN = "979-8-89176-251-0"
 }
 ```

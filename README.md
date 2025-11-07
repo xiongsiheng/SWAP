@@ -62,8 +62,6 @@ cd src
 ```sh
 # Train the generator
 accelerate launch SFT_Generator.py --dataset MATH --subset algebra --prob_type math --train --print_example
-# (Optional)
-accelerate launch DPO_Generator.py --dataset MATH --subset algebra --prob_type math --train --print_example
 
 # Train the semantical equivalence LoRA
 accelerate launch SFT_sem_equ_LoRA.py --dataset MATH --subset algebra --train --print_example
@@ -75,7 +73,7 @@ accelerate launch SFT_Discriminator.py --dataset MATH --subset algebra --prob_ty
 - Inference
 
 ```sh
-accelerate launch main.py --dataset MATH --subset algebra --prob_type math --enable_DBM --visualize --max_steps 20 --num_rollouts 3 --num_generations 3 --group_size 2
+accelerate launch main.py --dataset MATH --subset algebra --prob_type math --enable_DM --visualize --max_steps 20 --num_rollouts 3 --num_generations 3 --group_size 2
 ```
 
 Please check the source code for detailed parameter explanation.

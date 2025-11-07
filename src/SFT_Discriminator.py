@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument('--resume_from', default=None)  # Resume from checkpoint
     parser.add_argument('--batch_size', type=int, default=1)  # Training batch size
     parser.add_argument('--max_seq_len', type=int, default=2048)  # Maximum sequence length
+    parser.add_argument('--finetune_method', type=str, choices=['lora', 'full'], default='lora')  # Finetuning method: LoRA or full finetuning
 
     return parser.parse_args()
 
@@ -192,6 +193,60 @@ def SFT_with_LoRA(model, tokenizer, output_dir, formatting_func, data_train, dat
     trainer.save_model(f"{output_dir}/final")
 
 
+def SFT_with_full_finetuning(model, tokenizer, output_dir, formatting_func, data_train, data_val, batch_size, max_seq_length, resume_from_checkpoint=None, collator=None):
+    """
+    Trains a model with full finetuning for Supervised Fine-Tuning (SFT).
+    Args:
+        model (PreTrainedModel): The base model to be fine-tuned.
+        tokenizer (PreTrainedTokenizer): The tokenizer for the model.
+        output_dir (str): Directory to save the trained model.
+        formatting_func (Callable): Function to format the input data.
+        data_train (Dataset): Training dataset.
+        data_val (Dataset): Validation dataset.
+        batch_size (int): Batch size for training.
+        max_seq_length (int): Maximum sequence length for input.
+        resume_from_checkpoint (str, optional): Path to resume training from.
+        collator (DataCollator, optional): Data collator for tokenization.
+    """
+    training_args = transformers.TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=batch_size,
+        gradient_accumulation_steps=16,
+        optim="paged_adamw_32bit",
+        save_steps=50,
+        learning_rate=5e-4,
+        logging_steps=10,
+        max_grad_norm=0.3,
+        evaluation_strategy="epoch",
+        warmup_ratio=0.03,
+        group_by_length=True,
+        lr_scheduler_type="cosine",
+        ddp_find_unused_parameters=False,
+        eval_accumulation_steps=16,
+        bf16=True,
+        num_train_epochs=10,
+        resume_from_checkpoint=resume_from_checkpoint
+    )
+
+    trainer = SFTTrainer(
+        model=model,
+        train_dataset=data_train,
+        eval_dataset=data_val,
+        formatting_func=formatting_func,
+        max_seq_length=max_seq_length,
+        tokenizer=tokenizer,
+        args=training_args,
+        data_collator=collator
+    )
+
+    if resume_from_checkpoint:
+        print(f"Resuming from checkpoint: {resume_from_checkpoint}")
+        trainer.train(resume_from_checkpoint=True)
+    else:
+        trainer.train()
+    trainer.save_model(f"{output_dir}/final")
+
+
 def main():
     """
     Main function to run the script. Handles argument parsing, dataset preparation, 
@@ -231,11 +286,20 @@ def main():
         response_template = " ### Output:"
         collator = DataCollatorForCompletionOnlyLM(response_template, tokenizer=tokenizer)
 
-        SFT_with_LoRA(
-            model, tokenizer, output_dir, formatting_func, 
-            dataset_train, dataset_val, args.batch_size, 
-            args.max_seq_len, args.resume_from, collator
-        )
+        if args.finetune_method == "lora":
+            # Apply LoRA for SFT
+            SFT_with_LoRA(
+                model, tokenizer, output_dir, formatting_func, 
+                dataset_train, dataset_val, args.batch_size, 
+                args.max_seq_len, args.resume_from, collator
+            )
+        else:
+            # Apply full finetuning without PEFT modifications
+            SFT_with_full_finetuning(
+                model, tokenizer, output_dir, formatting_func, 
+                dataset_train, dataset_val, args.batch_size, 
+                args.max_seq_len, args.resume_from, collator
+            )
 
 
 if __name__ == "__main__":

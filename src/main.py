@@ -15,7 +15,7 @@ parser.add_argument('--subset', default='algebra')
 parser.add_argument('--prob_type', default='math')  # 'math', 'logical reasoning', 'coding'
 
 
-parser.add_argument('--enable_DBM', action='store_true')  # whether enable diversity-based modelling for generator
+parser.add_argument('--enable_DM', action='store_true')  # whether enable diversity-based modelling for generator
 parser.add_argument('--use_meta_knowledge', action='store_true')  # whether use meta-knowledge for discriminator
 parser.add_argument('--structure_check', action='store_true')  # whether check the structure of the reasoning process
 parser.add_argument('--visualize', action='store_true')  # whether visualize the language model output
@@ -45,7 +45,7 @@ args = parser.parse_args()
 
 
 def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_model_id, meta_knowledge_path, max_steps=20, num_rollouts=8, num_generations=5, 
-         cmp_per_opt=1, group_size=3, batch_size_gen=24, batch_size_disc=12, enable_DBM=True, use_meta_knowledge=True, structure_check=True, visualize=False):
+         cmp_per_opt=1, group_size=3, batch_size_gen=24, batch_size_disc=12, enable_DM=True, use_meta_knowledge=True, structure_check=True, visualize=False):
     '''
     Run the workflow of SWAP.
 
@@ -64,7 +64,7 @@ def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_mo
         group_size (int): The group size for single-time comparison.
         batch_size_gen (int): The batch size for generator.
         batch_size_disc (int): The batch size for discriminator.
-        enable_DBM (bool): Whether enable diversity-based modelling for generator.
+        enable_DM (bool): Whether enable diversity-based modelling for generator.
         use_meta_knowledge (bool): Whether use meta-knowledge for discriminator.
         structure_check (bool): Whether check the structure of the reasoning process.
         visualize (bool): Whether visualize the language model output.
@@ -85,7 +85,7 @@ def SWAP(prob_type, dataset_test, output_dir, gen_model_id, sem_model_id, dis_mo
         cnt = 0
         while cnt < max_steps:
             # Initialize Generator and perform inference
-            agent_gen = Generator(gen_model_id, sem_model_id, model_name, enable_DBM=enable_DBM, prob_type=prob_type)
+            agent_gen = Generator(gen_model_id, sem_model_id, model_name, enable_DM=enable_DM, prob_type=prob_type)
             force_termination = False if cnt < max_steps-1 else True
             flag_finish = agent_gen.inference(dataset_test, output_dir, str(rollout_id), batch_size_gen, num_generations[cnt], num_future_steps[cnt], 
                                               force_termination=force_termination, visualize=visualize)
@@ -137,7 +137,7 @@ def build_dataset(args):
         dataset_filtered.append(sample)
     dataset_test = Dataset.from_list(dataset_filtered)
     
-    meta_knowledge_path = f'../materials/meta_knowledge/{args.dataset}_{args.subset}'
+    meta_knowledge_path = [f'../materials/similar_question_ids/{args.dataset}.json', f'../materials/meta_knowledge/{args.dataset}.jsonl']
     return dataset_test, meta_knowledge_path
 
 
@@ -147,5 +147,5 @@ if __name__ == '__main__':
 
     SWAP(args.prob_type, dataset_test, args.output_dir, args.gen_model_id, args.sem_model_id, args.dis_model_id, meta_knowledge_path, 
          max_steps=args.max_steps, num_rollouts=args.num_rollouts, num_generations=args.num_generations, cmp_per_opt=args.cmp_per_opt, 
-         group_size=args.group_size, batch_size_gen=args.batch_size_gen, batch_size_disc=args.batch_size_disc, enable_DBM=args.enable_DBM, 
+         group_size=args.group_size, batch_size_gen=args.batch_size_gen, batch_size_disc=args.batch_size_disc, enable_DM=args.enable_DM, 
          use_meta_knowledge=args.use_meta_knowledge, structure_check=args.structure_check, visualize=args.visualize)

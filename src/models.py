@@ -95,7 +95,7 @@ def distributed_inference(model, tokenizer, accelerator, prompts, batch_size, ma
 
 
 class Generator:
-    def __init__(self, gen_model_id, sem_model_id, model_name, enable_DBM=True, show_prompt_only=False, prob_type=None):
+    def __init__(self, gen_model_id, sem_model_id, model_name, enable_DM=True, show_prompt_only=False, prob_type=None):
         '''
         Initialize the Generator object.
 
@@ -103,7 +103,7 @@ class Generator:
             gen_model_id (str): The ID of the generator model to use.
             sem_model_id (str): The ID of the semantic equivalent model to use.
             model_name (str): The name of the model to use.
-            enable_DBM (bool): Whether to enable diversity-based modelling.
+            enable_DM (bool): Whether to enable diversity-based modelling.
             show_prompt_only (bool): Whether to only show the prompts without generating completions.
             prob_type (str): The type of the problem.
         
@@ -111,7 +111,7 @@ class Generator:
             None
         '''
         assert prob_type in ['math', 'logical reasoning', 'coding'], "Invalid problem type."   # We mainly test these types of problems. You can adapt to other types.
-        self.enable_DBM = enable_DBM
+        self.enable_DM = enable_DM
         self.show_prompt_only = show_prompt_only  # For debugging purposes
         self.prob_type = prob_type
         if not show_prompt_only:
@@ -135,7 +135,7 @@ class Generator:
                                                     torch_dtype=torch.float16
                                                     )
 
-        if self.enable_DBM:
+        if self.enable_DM:
             model_sem = AutoModelForCausalLM.from_pretrained(model_name,
                                                             device_map="auto",
                                                             torch_dtype=torch.float16
@@ -146,14 +146,14 @@ class Generator:
         # this should be set for finutning and batched inference
         self.tokenizer.add_special_tokens({"pad_token": "<PAD>"})
         model.resize_token_embeddings(len(self.tokenizer))
-        if self.enable_DBM:
+        if self.enable_DM:
             model_sem.resize_token_embeddings(len(self.tokenizer))
 
         self.tokenizer.pad_token_id = 0
         self.tokenizer.padding_side = 'left'
 
         model.generation_config.pad_token_id = self.tokenizer.eos_token_id
-        if self.enable_DBM:
+        if self.enable_DM:
             model_sem.generation_config.pad_token_id = self.tokenizer.eos_token_id
 
         self.peft_model = PeftModel.from_pretrained(model, gen_model_id, torch_dtype=torch.float32, offload_folder="lora_results/temp")
@@ -161,7 +161,7 @@ class Generator:
 
         self.accelerator = Accelerator()
 
-        if self.enable_DBM:
+        if self.enable_DM:
             self.peft_model_sem = PeftModel.from_pretrained(model_sem, sem_model_id, torch_dtype=torch.float32, offload_folder="lora_results/temp")
             self.peft_model_sem.eval()
         else:
@@ -396,7 +396,7 @@ class Generator:
             tags = ['"Final answer":' for _ in range(len(samples))]
         else:
             responses = distributed_inference(self.peft_model, self.tokenizer, self.accelerator, prompts, len(samples), 
-                                              max_new_tokens=7, top_k=10, top_p=0.9, temperature=0.3)
+                                              max_new_tokens=7, top_k=10, top_p=0.9, temperature=0)
             outputs = [response.strip() for response in responses]
             tags = [output[:len(output.split(':')[0])+1].strip() for output in outputs]
         
@@ -684,21 +684,19 @@ class Discriminator():
         Returns:
             meta_knowledge (str): The meta knowledge for the test question.
         '''
-        with open(f'{meta_knowledge_path}/similar_question_ids.json', 'r') as f:
+        path_similar_question_ids, path_meta_knowledge = meta_knowledge_path
+        
+        with open(path_similar_question_ids, 'r') as f:
             data = json.load(f)
         similar_filename_ls = data[test_q_id]
-        meta_knowledge = ''
-        cnt = 0
-        for file in similar_filename_ls:
-            file_mapped = f'{meta_knowledge_path}/{file}.json'
-            if not os.path.exists(file_mapped):
-                continue
-            with open(file_mapped, 'r') as f:
-                data = json.load(f)
-            meta_knowledge += '\n\n' + data['Knowledge']
-            cnt += 1
-            if cnt >= num_references:
-                break
+        
+        with open(path_meta_knowledge, 'r') as f:
+            data = json.load(f)
+        
+        with open(path_meta_knowledge, "r") as f:
+            data = [json.loads(line)['knowledge'] for line in f if json.loads(line)['id'] in similar_filename_ls]
+        
+        meta_knowledge = '\n\n'.join(data[:num_references])
         return meta_knowledge.strip()
 
 
@@ -774,7 +772,7 @@ class Discriminator():
             None
         '''
         flat_prompts_ls = [item for sublist in prompts_ls for item in sublist]    
-        flat_results = distributed_inference(self.peft_model, self.tokenizer, self.accelerator, flat_prompts_ls, batch_size, max_new_tokens=256, top_k=10, top_p=0.9, temperature=0.2)
+        flat_results = distributed_inference(self.peft_model, self.tokenizer, self.accelerator, flat_prompts_ls, batch_size, max_new_tokens=256, top_k=10, top_p=0.9, temperature=0)
         flat_results = [f'{prompt.strip()}\n{res}' for prompt, res in zip(flat_prompts_ls, flat_results)]
         recovered_res = self._reshape_res(prompts_ls, flat_results)
 

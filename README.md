@@ -1,105 +1,136 @@
 # SWAP: Deliberate Reasoning in Language Models as Structure-Aware Planning with an Accurate World Model
 
-This repository contains the code for the paper [ACL 25 (main)] [Deliberate Reasoning in Language Models as Structure-Aware Planning with an Accurate World Model](https://arxiv.org/pdf/2410.03136).
+This repository contains the code for the paper [ACL 25 (main)] [Deliberate Reasoning in Language Models as Structure-Aware Planning with an Accurate World Model](https://aclanthology.org/2025.acl-long.1540.pdf).
 
-SWAP consists of three main components: the policy model $M_{\pi}$, the world model $M_{\text{wm}}$, and the controller $M_\text{c}$. Starting with the goal $G$ and the initial state $(s_0, g_0)$, the policy model $M_{\pi}$ generates an optimized plan $H$. Using $G$, $H$, and the current state $(s_t, g_t)$, $M_{\pi}$ proposes the next action $a_t$ through deliberate planning. After the action is chosen, the world model $M_{\text{wm}}$ predicts the next state $s_{t+1}$ and updates the entailment graph $g_{t+1}$. Finally, based on $G$ and the updated state $(s_{t+1}, g_{t+1})$, the controller $M_c$ decides whether to continue the process or output the final answer.
 
-<br>
+
+## **Overview**
+
+**SWAP** introduces a structure-aware planning framework that enables deliberate multi-step reasoning in language models.
+It comprises three main components:
+
+* **Policy model** ($M_{\pi}$)
+* **World model** ($M_{\text{wm}}$)
+* **Controller** ($M_{\text{c}}$)
+
+Starting from the goal $G$ and the initial state $(s_0, g_0)$:
+
+1. **Planning:** The policy model $M_{\pi}$ generates an optimized plan $H$.
+2. **Action generation:** Using $G$, $H$, and the current state $(s_t, g_t)$, the policy model proposes the next action $a_t$ through deliberate planning.
+3. **State prediction:** The world model $M_{\text{wm}}$ predicts the next state $s_{t+1}$ and updates the entailment graph $g_{t+1}$.
+4. **Control:** Based on $G$ and the updated state $(s_{t+1}, g_{t+1})$, the controller $M_{\text{c}}$ decides whether to continue the reasoning process or output the final answer.
 
 <p align="center">
-  <img src='https://raw.githubusercontent.com/xiongsiheng/SWAP/main/misc/Framework.png' width=650>
+  <img src="https://raw.githubusercontent.com/xiongsiheng/SWAP/main/misc/Framework.png" width="650">
 </p>
 
-<br>
+SWAP performs **multi-step reasoning** through structure-aware planning in tasks such as **FOLIO** (left) and **MATH** (right).
+At each step, given the current state (represented as a graph) and an action, the world model predicts the next state as an updated graph.
+The policy model is guided by this graph to propose the next action.
 
-SWAP performs multi-step reasoning through structure-aware planning in FOLIO (left) and MATH (right). At each step, given the current state, represented as a graph, and an action, the world model predicts the next state as an updated graph. The policy model is guided by this graph to propose next action.
-
-<br>
 <p align="center">
-  <img src='https://raw.githubusercontent.com/xiongsiheng/SWAP/main/misc/Example_tree_search.png' width=650>
+  <img src="https://raw.githubusercontent.com/xiongsiheng/SWAP/main/misc/Example_tree_search.png" width="650">
 </p>
 
 
 
+## **Quick Start**
+
+We use the [Hugging Face](https://huggingface.co/) platform to load base models such as **Llama 3** and **Mistral**.
+Ensure you have a Hugging Face account ([guidelines](https://huggingface.co/blog/llama3)) before starting.
 
 
-## Quick Start
-We use [Hugging Face](https://huggingface.co/) platform to load the Llama3 and Mistral models. Make sure you have an account ([Guidance](https://huggingface.co/blog/llama3)).
+### **Directory structure**
 
-The structure of the file folder should be like
-```sh
+```
 SWAP/
-│
 ├── materials/
-│
 ├── model_weights/
-│
 ├── results/
-│
 └── src/
 ```
 
-<h4> Preparation: </h4>
+### **Setup**
 
-```sh
-# git clone this repo
-
-# create a new environment with anaconda and install the necessary Python packages
-
-# install hugging face packages to load the base models and datasets
-
-# create the folders
+```bash
+git clone https://github.com/xiongsiheng/SWAP.git
 cd SWAP
-mkdir model_weights
-mkdir results
-cd src
+
+# Create and activate environment
+conda create -n swap python=3.10 -y
+conda activate swap
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-<h4> For our SWAP framework: </h4>
 
-- Base model fine-tuning
+## **Training**
 
-```sh
+### **Base Model Fine-Tuning**
+
+```bash
 # Train the generator
 accelerate launch SFT_Generator.py --dataset MATH --subset algebra --prob_type math --train --print_example
 
-# Train the semantical equivalence LoRA
+# Train the semantic-equivalence LoRA
 accelerate launch SFT_sem_equ_LoRA.py --dataset MATH --subset algebra --train --print_example
 
 # Train the discriminator
-accelerate launch SFT_Discriminator.py --dataset MATH --subset algebra --prob_type math --group_size 2 --train --print_example 
+accelerate launch SFT_Discriminator.py --dataset MATH --subset algebra --prob_type math --group_size 2 --train --print_example
 ```
 
-- Inference
 
-```sh
-accelerate launch main.py --dataset MATH --subset algebra --prob_type math --enable_DM --visualize --max_steps 20 --num_rollouts 3 --num_generations 3 --group_size 2
+## **Inference**
+
+```bash
+accelerate launch main.py \
+  --dataset MATH \
+  --subset algebra \
+  --prob_type math \
+  --enable_DM \
+  --visualize \
+  --max_steps 20 \
+  --num_rollouts 3 \
+  --num_generations 3 \
+  --group_size 2
 ```
 
-Please check the source code for detailed parameter explanation.
+(Refer to the source code for detailed parameter descriptions.)
 
-## Datasets
 
-All the datasets (gsm8k, MATH, FOLIO, ReClor, HumanEval, MBPP) with trajectories and process supervision can be found [here](https://huggingface.co/datasets/sxiong/SWAP).
+## **Datasets**
 
-To download the dataset, install [Huggingface Datasets](https://huggingface.co/docs/datasets/quickstart) and then use the following command:
+All datasets used in SWAP (GSM8K, MATH, FOLIO, ReClor, HumanEval, MBPP) with trajectory and process supervision are available on [Hugging Face Datasets](https://huggingface.co/datasets/sxiong/SWAP):
 
 ```python
 from datasets import load_dataset
+
 dataset = load_dataset("sxiong/SWAP", "MATH_trajectory")
 print(dataset)
-split = dataset['train']
+split = dataset["train"]
 ```
 
-## Accelerate with Multi GPUs
-The default training/inference arguments are for a single A100 (GPU memory: 80G). If you have multiple GPUs, the **training** process can be accelerated in a distributed way. Here we recommend the library of **DeepSpeed** [[docs]](https://huggingface.co/docs/peft/en/accelerate/deepspeed).
+We also provide an updated version (**[SWAP_v2](https://huggingface.co/datasets/sxiong/SWAP_v2)**) featuring **DeepSeek V3.2** and provides the corresponding [model weights](https://huggingface.co/sxiong/SWAP_LLM_v2).
 
-Also, you can accelerate the **inference** with multiple GPUs.
 
-## Contact
+
+## **Acceleration with Multiple GPUs**
+
+The default configuration targets a single **A100 (80 GB)** GPU.
+To accelerate **training**, we recommend distributed execution with **[DeepSpeed](https://huggingface.co/docs/peft/en/accelerate/deepspeed)**.
+**Inference** can also be parallelized across multiple GPUs for efficiency.
+
+
+
+## **Contact**
+
 If you have any inquiries, please feel free to raise an issue or reach out to sxiong45@gatech.edu.
 
-## Citation
+
+
+## **Citation**
+
 ```
 @inproceedings{xiong-etal-2025-deliberate,
     title = "Deliberate Reasoning in Language Models as Structure-Aware Planning with an Accurate World Model",
@@ -122,3 +153,4 @@ If you have any inquiries, please feel free to raise an issue or reach out to sx
     ISBN = "979-8-89176-251-0"
 }
 ```
+

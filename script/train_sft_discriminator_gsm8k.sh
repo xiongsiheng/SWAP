@@ -1,0 +1,14 @@
+python src/SFT_discriminator.py \
+  --model_id meta-llama/Meta-Llama-3-8B-Instruct \
+  --hf_dataset sxiong/SWAP  \
+  --hf_config gsm8k_contrastive_ranking_v2 \
+  --hf_split train \
+  --output_dir ../model_weights/disc_lora_llama3_gsm8k \
+  --batch_size 10 \
+  --max_seq_len 2560 \
+  --num_train_epochs 5 \
+  --learning_rate 2e-4 \
+  --use_wandb \
+  --wandb_project swap_disc \
+  --wandb_run_name disc_lora_llama3_gsm8k \
+  --train

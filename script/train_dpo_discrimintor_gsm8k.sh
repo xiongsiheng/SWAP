@@ -1,0 +1,20 @@
+python src/DPO_discriminator.py \
+  --model_id meta-llama/Meta-Llama-3-8B-Instruct \
+  --adapter_path ../model_weights/disc_lora_llama3_gsm8k/final \
+  --ref_adapter_path ../model_weights/disc_lora_llama3_gsm8k/final \
+  --hf_dataset sxiong/SWAP \
+  --hf_config gsm8k_contrastive_ranking_preference_v2 \
+  --hf_split train \
+  --output_dir ../model_weights/disc_lora_dpo_llama3_gsm8k \
+  --batch_size 2 \
+  --gradient_accumulation_steps 16 \
+  --max_length 3072 \
+  --max_prompt_length 1792 \
+  --num_train_epochs 3 \
+  --learning_rate 5e-5 \
+  --beta 0.1 \
+  --loss_type sigmoid \
+  --use_wandb \
+  --wandb_project swap_disc_dpo \
+  --wandb_run_name disc_lora_dpo_llama3_gsm8k \
+  --train 

@@ -1,0 +1,14 @@
+python src/SFT_generator.py \
+  --model_id meta-llama/Meta-Llama-3-8B-Instruct \
+  --hf_dataset sxiong/SWAP \
+  --hf_config gsm8k_trajectory \
+  --hf_split train \
+  --output_dir ../model_weights/gen_lora_llama3_gsm8k \
+  --batch_size 36 \
+  --max_seq_len 896 \
+  --num_train_epochs 5 \
+  --learning_rate 2e-4 \
+  --use_wandb \
+  --wandb_project swap_gen \
+  --wandb_run_name gen_lora_llama3_gsm8k \
+  --train

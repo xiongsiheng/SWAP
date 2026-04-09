@@ -43,13 +43,17 @@ The policy model is guided by this graph to propose the next action.
 
 ## **Quick Start**
 
+We use the [Hugging Face](https://huggingface.co/) platform to load base models such as **Llama 3** and **Mistral**.
+Ensure you have a Hugging Face account ([guidelines](https://huggingface.co/blog/llama3)) before starting.
+
+
 ### **Directory structure**
 
 ```
 SWAP/
+├── materials/
 ├── model_weights/
-├── output/
-├── script/
+├── results/
 └── src/
 ```
 
@@ -59,76 +63,74 @@ SWAP/
 git clone https://github.com/xiongsiheng/SWAP.git
 cd SWAP
 
-# Create and activate the training environment
-conda create -n swap_train python=3.10 -y
-conda activate swap_train
+# Create and activate environment
+conda create -n swap python=3.10 -y
+conda activate swap
 
-# Install training dependencies
-pip install -r requirements_train.txt
-
-# Create and activate the evaluation environment
-# vLLM is used to substantially accelerate evaluation
-conda create -n swap_eval python=3.10 -y
-conda activate swap_eval
-
-# Install evaluation dependencies
-pip install -r requirements_eval.txt
+# Install dependencies
+pip install -r requirements.txt
 ```
 
 
 ## **Training**
 
+### **Base Model Fine-Tuning**
+
 ```bash
 # Train the generator
-bash script/train_sft_generator_gsm8k.sh
+accelerate launch SFT_Generator.py --dataset MATH --subset algebra --prob_type math --train --print_example
+
+# Train the semantic-equivalence LoRA
+accelerate launch SFT_sem_equ_LoRA.py --dataset MATH --subset algebra --train --print_example
 
 # Train the discriminator
-bash script/train_sft_discriminator_gsm8k.sh
-
-# Optional: distributed training
-bash script/train_sft_discriminator_gsm8k_dist.sh
-
-# Optional: DPO training
-bash script/train_dpo_discrimintor_gsm8k.sh
+accelerate launch SFT_Discriminator.py --dataset MATH --subset algebra --prob_type math --group_size 2 --train --print_example
 ```
 
 
-## **Evaluation**
+## **Inference**
 
 ```bash
-# Evaluate the generator (without planning)
-bash script/eval_generator_gsm8k.sh
-
-# Evaluate the full system
-bash script/eval_system_gsm8k.sh
-
-# Optional: distributed evaluation
-CUDA_VISIBLE_DEVICES=0 NUM_SHARDS=4 SHARD_INDEX=0 bash script/eval_system_gsm8k.sh
-CUDA_VISIBLE_DEVICES=1 NUM_SHARDS=4 SHARD_INDEX=1 bash script/eval_system_gsm8k.sh
-CUDA_VISIBLE_DEVICES=2 NUM_SHARDS=4 SHARD_INDEX=2 bash script/eval_system_gsm8k.sh
-CUDA_VISIBLE_DEVICES=3 NUM_SHARDS=4 SHARD_INDEX=3 bash script/eval_system_gsm8k.sh
-
-# Optional: download our checkpoints
+accelerate launch main.py \
+  --dataset MATH \
+  --subset algebra \
+  --prob_type math \
+  --enable_DM \
+  --visualize \
+  --max_steps 20 \
+  --num_rollouts 3 \
+  --num_generations 3 \
+  --group_size 2
 ```
 
-For detailed descriptions of the available arguments and configuration options, please refer to the source code.
+(Refer to the source code for detailed parameter descriptions.)
 
 
-## **Datasets & Checkpoints**
+## **Datasets**
 
-All datasets used in SWAP (GSM8K, MATH, FOLIO, ReClor, HumanEval, MBPP) with trajectory and process supervision are available [here](https://huggingface.co/datasets/sxiong/SWAP):
+All datasets used in SWAP (GSM8K, MATH, FOLIO, ReClor, HumanEval, MBPP) with trajectory and process supervision are available on [Hugging Face Datasets](https://huggingface.co/datasets/sxiong/SWAP):
 
 ```python
 from datasets import load_dataset
 
-dataset = load_dataset("sxiong/SWAP", "gsm8k_trajectory")
+dataset = load_dataset("sxiong/SWAP", "MATH_trajectory")
 print(dataset)
 split = dataset["train"]
 ```
 
-We also provide the corresponding [checkpoints](https://huggingface.co/sxiong/SWAP_LLM).
 
-In addition, we release an updated version of [datasets](https://huggingface.co/datasets/sxiong/SWAP_v2) and provide the corresponding [checkpoints](https://huggingface.co/sxiong/SWAP_LLM_v2).
+## **Acceleration with Multiple GPUs**
+
+The default configuration targets a single **A100 (80 GB)** GPU.
+To accelerate **training**, we recommend distributed execution with **[DeepSpeed](https://huggingface.co/docs/peft/en/accelerate/deepspeed)**.
+**Inference** can also be parallelized across multiple GPUs for efficiency.
+
+
+
+## **Contact**
+
+If you have any inquiries, please feel free to raise an issue or reach out to sxiong45@gatech.edu.
+
 
 
 ## **Citation**

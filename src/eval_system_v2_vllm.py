@@ -13,15 +13,12 @@ from grading.grader import grade_answer
 from tqdm import tqdm
 
 
-
-LABEL_PATTERN = re.compile(
-    r"(?m)^(Goal|Initial state|Plan|Action\s+\d+|State\s+\d+|Final answer):"
-)
+SENTINEL = "<|resp|>"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate the full system with vLLM."
+        description="Evaluate the full system_v2 with vLLM."
     )
     parser.add_argument("--data", default=None)
     parser.add_argument("--split", default="test")
@@ -38,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--generator_base_model", default=None)
     parser.add_argument("--generator_adapter_path", default=None)
     parser.add_argument("--generator_hf_repo_id", default=None)
-    parser.add_argument("--generator_hf_subpath", default=None)
+    parser.add_argument("--generator_hf_adapter_subpath", default=None)
     parser.add_argument("--generation_max_model_len", type=int, default=3072)
     parser.add_argument("--generator_tensor_parallel_size", type=int, default=1)
     parser.add_argument("--generation_gpu_memory_utilization", type=float, default=0.3)
@@ -50,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--discriminator_base_model", default=None)
     parser.add_argument("--discriminator_adapter_path", default=None)
     parser.add_argument("--discriminator_hf_repo_id", default=None)
-    parser.add_argument("--discriminator_hf_subpath", default=None)
+    parser.add_argument("--discriminator_hf_adapter_subpath", default=None)
     parser.add_argument("--discrimination_max_model_len", type=int, default=8192)
     parser.add_argument("--discriminator_tensor_parallel_size", type=int, default=1)
     parser.add_argument("--discriminator_gpu_memory_utilization", type=float, default=0.6)
@@ -60,16 +57,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--discrimination_max_tokens", type=int, default=4096)
 
     parser.add_argument("--num_candidates", type=int, default=8)
-    parser.add_argument("--keep_top_k", type=int, default=2)
     parser.add_argument("--cmp_per_opt", type=int, default=3)
     parser.add_argument("--group_size", type=int, choices=[2, 3], default=3)
-    parser.add_argument("--max_steps", type=int, default=8)
-    parser.add_argument("--search_per_N_steps", type=int, default=1)
-    parser.add_argument("--future_N_steps", type=int, default=0)
     return parser.parse_args()
 
 
-def load_test_samples(data: str, split: str = "test", limit: Optional[int] = None) -> List[Dict[str, Any]]:
+def load_test_samples(
+    data: str,
+    split: str = "test",
+    limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     samples: List[Dict[str, Any]] = []
     if data == "gsm8k":
         dataset = load_dataset("openai/gsm8k", "main", split=split)
@@ -79,7 +76,84 @@ def load_test_samples(data: str, split: str = "test", limit: Optional[int] = Non
             samples.append(sample)
             if limit is not None and len(samples) >= limit:
                 break
+    elif data == "math500":
+        dataset = load_dataset("sxiong/MATH-500", split=split)
+        for sample in dataset:
+            sample = dict(sample)
+            unique_id = str(sample.get("unique_id", "unknown"))
+            sample["id"] = unique_id.removesuffix(".json").replace("/", "_")
+            sample["question"] = sample.get("problem", "")
+            samples.append(sample)
+            if limit is not None and len(samples) >= limit:
+                break
     return samples
+
+
+STEP_PATTERNS = [
+    r"^\s*#{1,6}\s*.*",                    # Markdown headers
+    r"^\s*\*\*?\s*Step\s*\d+.*",           # **Step 1**
+    r"^\s*Step\s*\d+.*",                   # Step 1
+    r"^\s*\d+\.\s+.*",                     # 1. Something
+]
+
+SEPARATOR_PATTERN = r"^\s*---+\s*$"
+
+def is_step_header(line: str) -> bool:
+    for pattern in STEP_PATTERNS:
+        if re.match(pattern, line, flags=re.IGNORECASE):
+            return True
+    return False
+
+
+def parse_trajectory(text: str) -> List[Dict]:
+    text = text.split('\\boxed{')[0].strip()
+    lines = text.splitlines()
+    steps = []
+    
+    current_step = []
+    step_id = 0
+
+    def flush():
+        nonlocal current_step, step_id
+        if current_step:
+            content = "\n".join(current_step).strip()
+            if content:
+                steps.append({
+                    "step_id": step_id,
+                    "content": content
+                })
+                step_id += 1
+        current_step = []
+
+    for line in lines:
+        # Case 1: explicit separator
+        if re.match(SEPARATOR_PATTERN, line):
+            flush()
+            continue
+
+        # Case 2: step header
+        if is_step_header(line):
+            flush()
+            current_step.append(line)
+            continue
+
+        current_step.append(line)
+
+    flush()
+
+    # Fallback: if only 1 step, split by paragraphs
+    if len(steps) <= 1:
+        paragraphs = re.split(r"\n\s*\n", text)
+        steps = []
+        for i, p in enumerate(paragraphs):
+            p = p.strip()
+            if p:
+                steps.append({
+                    "step_id": i,
+                    "content": p
+                })
+
+    return steps
 
 
 def extract_gold_answer(answer_text: str) -> str:
@@ -96,35 +170,69 @@ def normalize_answer(text: Any) -> str:
     return normalized
 
 
+def parse_boxed_result(s):
+    '''
+    Parse the boxed result.
+    '''
+    s = str(s)
+    # Find the start of the boxed content
+    start = s.find('\\boxed{')
+    if start == -1:
+        return s
+    
+    # Skip past '\\boxed{' to start content capture
+    start += len('\\boxed{')
+    brace_count = 1  # We start after finding the first '{'
+    content = []
+    
+    # Iterate over the string starting after '\boxed{'
+    for i in range(start, len(s)):
+        if s[i] == '{':
+            brace_count += 1
+        elif s[i] == '}':
+            brace_count -= 1
+        
+        # If brace_count returns to 0, we've found the matching '}'
+        if brace_count == 0:
+            return ''.join(content)
+        content.append(s[i])
+    
+    return s
+
+
 def extract_prediction_answer(response_text: str) -> str:
+    text = response_text.strip()
+
+    if '\\boxed' in text:
+        return parse_boxed_result(text)
+
     final_answer_patterns = [
         r'"Final answer"\s*:\s*"?([^"\n]+)"?',
         r"Final answer\s*:\s*([^\n]+)",
         r"####\s*([^\n]+)",
     ]
     for pattern in final_answer_patterns:
-        match = re.search(pattern, response_text, flags=re.IGNORECASE)
+        match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             return normalize_answer(match.group(1))
 
-    fallback_matches = re.findall(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?(?:/\d+)?", response_text)
+    fallback_matches = re.findall(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?(?:/\d+)?", text)
     if fallback_matches:
         return normalize_answer(fallback_matches[-1])
 
-    return normalize_answer(response_text)
+    return ""
 
 
 def evaluate_prediction(sample: Dict[str, Any], response: str) -> Dict[str, Any]:
     gold_answer = extract_gold_answer(sample["answer"])
-    gold_answer_normalized = normalize_answer(gold_answer)
     pred_answer = extract_prediction_answer(response)
     is_correct = grade_answer(pred_answer, gold_answer)
     return {
         "gold_answer": gold_answer,
-        "gold_answer_normalized": gold_answer_normalized,
         "pred_answer": pred_answer,
         "correct": is_correct,
     }
+
 
 
 def save_results(output_path: Path, payload: Dict[str, Any]) -> None:
@@ -174,9 +282,7 @@ def build_ordered_results(
 def build_payload(
     args: argparse.Namespace,
     data: str,
-    generator_base_model: str,
     generator_adapter_path: Optional[Path],
-    discriminator_base_model: str,
     discriminator_adapter_path: Optional[Path],
     results: List[Dict[str, Any]],
     latest_results: List[Dict[str, Any]],
@@ -186,19 +292,18 @@ def build_payload(
         "generator_base_model": args.generator_base_model,
         "generator_adapter_path": str(generator_adapter_path) if generator_adapter_path is not None else None,
         "generator_hf_repo_id": args.generator_hf_repo_id,
-        "generator_hf_subpath": args.generator_hf_subpath,
+        "generator_hf_adapter_subpath": args.generator_hf_adapter_subpath,
         "generation_max_model_len": args.generation_max_model_len,
         "generator_tensor_parallel_size": args.generator_tensor_parallel_size,
         "generation_gpu_memory_utilization": args.generation_gpu_memory_utilization,
         "discriminator_base_model": args.discriminator_base_model,
         "discriminator_adapter_path": str(discriminator_adapter_path) if discriminator_adapter_path is not None else None,
         "discriminator_hf_repo_id": args.discriminator_hf_repo_id,
-        "discriminator_hf_subpath": args.discriminator_hf_subpath,
+        "discriminator_hf_adapter_subpath": args.discriminator_hf_adapter_subpath,
         "discrimination_max_model_len": args.discrimination_max_model_len,
         "discriminator_tensor_parallel_size": args.discriminator_tensor_parallel_size,
         "discriminator_gpu_memory_utilization": args.discriminator_gpu_memory_utilization,
         "data": data,
-        "split": args.split,
         "resume": args.resume,
         "resume_from_output": args.resume_from_output,
         "num_shards": args.num_shards,
@@ -210,12 +315,8 @@ def build_payload(
         "discrimination_top_p": args.discrimination_top_p,
         "discrimination_max_tokens": args.discrimination_max_tokens,
         "num_candidates": args.num_candidates,
-        "keep_top_k": args.keep_top_k,
         "cmp_per_opt": args.cmp_per_opt,
         "group_size": args.group_size,
-        "max_steps": args.max_steps,
-        "search_per_N_steps": args.search_per_N_steps,
-        "future_N_steps": args.future_N_steps,
         "total": len(latest_results),
         "correct": num_correct,
         "accuracy": (num_correct / len(latest_results)) if latest_results else 0.0,
@@ -223,270 +324,27 @@ def build_payload(
     }
 
 
-def count_completed_steps(trajectory: str) -> int:
-    completed_steps = len(re.findall(r"(?m)^State\s+\d+:", trajectory))
-    if re.search(r"(?m)^Goal:", trajectory) and re.search(r"(?m)^Initial state:", trajectory):
-        completed_steps += 1
-    if re.search(r"(?m)^Plan:", trajectory):
-        completed_steps += 1
-    return completed_steps
-
-
-def count_action_steps(trajectory: str) -> int:
-    return len(re.findall(r"(?m)^State\s+\d+:", trajectory))
-
-
 def has_final_answer(trajectory: str) -> bool:
-    return bool(re.search(r"(?m)^Final answer:", trajectory))
-
-
-def extract_step_number(label: str, prefix: str) -> Optional[int]:
-    match = re.fullmatch(rf"{prefix}\s+(\d+)", label)
-    if not match:
-        return None
-    return int(match.group(1))
-
-
-def extract_labeled_segments(text: str) -> List[str]:
-    matches = list(LABEL_PATTERN.finditer(text))
-    if not matches:
-        return []
-
-    segments: List[str] = []
-    for index, match in enumerate(matches):
-        start = match.start()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        segment = text[start:end].strip()
-        if segment:
-            segments.append(segment)
-    return segments
-
-
-def clean_segment_text(label: str, segment: str) -> str:
-    if label == "Final answer":
-        first_line = segment.splitlines()[0].strip()
-        return first_line
-
-    contamination_patterns = [
-        r"(?im)^return ordered steps only\.?\s*$",
-        r"(?im)^reasoning return ordered steps only:?\s*$",
-        r"(?im)^reasoning skill required:.*$",
-        r"(?im)^problem resolution ordered return only:?\s*$",
-    ]
-
-    cleaned = segment
-    for pattern in contamination_patterns:
-        cleaned = re.sub(pattern, "", cleaned)
-    return cleaned.strip()
-
-
-def parse_generation_chunk(
-    raw_text: str,
-    existing_trajectory: str,
-    max_new_steps: int,
-    future_n_steps: int = 0,
-) -> Tuple[str, int, bool, str]:
-    segments = extract_labeled_segments(raw_text)
-    if not segments:
-        return "", 0, False, ""
-
-    accepted: List[str] = []
-    future_segments: List[str] = []
-    existing_has_content = bool(existing_trajectory.strip())
-    pending_action = False
-    new_steps = 0
-    terminal = False
-    expected_step_number = count_action_steps(existing_trajectory) + 1
-    seen_prefix_labels = set()
-    future_steps = 0
-    collecting_future = False
-    future_pending_action = False
-    prefix_has_goal = bool(re.search(r"(?m)^Goal:", existing_trajectory))
-    prefix_has_initial_state = bool(re.search(r"(?m)^Initial state:", existing_trajectory))
-    prefix_has_plan = bool(re.search(r"(?m)^Plan:", existing_trajectory))
-
-    for segment in segments:
-        label = segment.split(":", 1)[0].strip()
-        segment = clean_segment_text(label, segment)
-        if not segment:
-            continue
-
-        if label == "Goal":
-            if existing_has_content or accepted or collecting_future:
-                continue
-            if label in seen_prefix_labels:
-                break
-            seen_prefix_labels.add(label)
-            accepted.append(segment)
-            prefix_has_goal = True
-            continue
-
-        if label == "Initial state":
-            if existing_has_content or collecting_future:
-                continue
-            if not prefix_has_goal or label in seen_prefix_labels:
-                break
-            seen_prefix_labels.add(label)
-            accepted.append(segment)
-            prefix_has_initial_state = True
-            new_steps = 1
-            continue
-
-        if label == "Plan":
-            if existing_has_content or collecting_future:
-                continue
-            if not (prefix_has_goal and prefix_has_initial_state) or label in seen_prefix_labels:
-                break
-            seen_prefix_labels.add(label)
-            accepted.append(segment)
-            prefix_has_plan = True
-            new_steps = 2
-            continue
-
-        if label.startswith("Action "):
-            if not existing_has_content and not (prefix_has_goal and prefix_has_initial_state and prefix_has_plan):
-                break
-            step_number = extract_step_number(label, "Action")
-            if step_number != expected_step_number:
-                break
-
-            if not collecting_future:
-                if new_steps >= max_new_steps:
-                    collecting_future = True
-                elif pending_action:
-                    break
-
-            if collecting_future:
-                if future_n_steps <= 0 or future_steps >= future_n_steps:
-                    break
-                if future_pending_action:
-                    break
-                future_segments.append(segment)
-                future_pending_action = True
-            else:
-                accepted.append(segment)
-                pending_action = True
-            continue
-
-        if label.startswith("State "):
-            step_number = extract_step_number(label, "State")
-            if step_number != expected_step_number:
-                break
-
-            if collecting_future:
-                if not future_pending_action:
-                    continue
-                future_segments.append(segment)
-                future_pending_action = False
-                future_steps += 1
-                expected_step_number += 1
-                if future_steps >= future_n_steps:
-                    break
-            else:
-                if not pending_action:
-                    continue
-                accepted.append(segment)
-                pending_action = False
-                new_steps += 1
-                expected_step_number += 1
-                if new_steps >= max_new_steps:
-                    collecting_future = future_n_steps > 0
-            continue
-
-        if label == "Final answer":
-            if not existing_has_content and not (prefix_has_goal and prefix_has_initial_state and prefix_has_plan):
-                break
-            if collecting_future:
-                if future_pending_action and future_segments:
-                    future_segments.pop()
-                    future_pending_action = False
-                future_segments.append(segment)
-            else:
-                if pending_action and accepted:
-                    accepted.pop()
-                    pending_action = False
-                accepted.append(segment)
-                terminal = True
-            break
-
-    if pending_action and accepted and accepted[-1].startswith("Action "):
-        accepted.pop()
-    if future_pending_action and future_segments and future_segments[-1].startswith("Action "):
-        future_segments.pop()
-
-    parsed = "\n".join(accepted).strip()
-    future_preview = "\n".join(future_segments).strip()
-    return parsed, new_steps, terminal, future_preview
-
-
-def append_trajectory(existing_trajectory: str, parsed_chunk: str) -> str:
-    if not existing_trajectory.strip():
-        return parsed_chunk.strip()
-    if not parsed_chunk.strip():
-        return existing_trajectory.strip()
-    return f"{existing_trajectory.strip()}\n{parsed_chunk.strip()}"
-
-
-def strip_graph_segments_for_discriminator(trajectory: str) -> str:
-    if not trajectory:
-        return ""
-
-    kept_lines: List[str] = []
-    for raw_line in trajectory.splitlines():
-        line = raw_line.strip()
-        if re.match(r"(?i)^(initial\s+graph|graph\s+\d+)\s*:", line):
-            continue
-        kept_lines.append(raw_line)
-
-    return "\n".join(kept_lines).strip()
-
-
-def render_messages_without_system_prompt(messages: List[Dict[str, str]]) -> str:
-    prompt_parts = ["<|begin_of_text|>"]
-    for message in messages:
-        role = message["role"].strip()
-        content = message["content"]
-        prompt_parts.append(f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>")
-    prompt_parts.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
-    return "".join(prompt_parts)
-
-
-def build_generation_messages(
-    question: str,
-    existing_partial_trajectory: str,
-) -> List[Dict[str, str]]:
-    user_content = (
-        "Solve the problem step by step using a structured reasoning format. Return ordered steps only.\n\n"
-        f"Problem:\n{question.strip()}"
-    )
-    return [
-        {
-            "role": "user",
-            "content": user_content,
-        },
-        {
-            "role": "assistant",
-            "content": existing_partial_trajectory,
-        },
-    ]
+    return '\\boxed' in trajectory
 
 
 def build_generation_prompt(question: str, existing_partial_trajectory: str) -> str:
-    messages = build_generation_messages(question, existing_partial_trajectory)
-    return (
-        "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
-        f"{messages[0]['content']}"
-        "\n\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        f"{messages[1]['content']}"
+    prompt = (
+        f"{question.strip()}\n"
+        "Please reason step by step, and put your final answer within \\boxed{}.\n"
+        f"{SENTINEL}"
     )
+    if existing_partial_trajectory:
+        prompt = f"{prompt}\n{existing_partial_trajectory}"
+    return prompt
 
 
-def build_discrimination_messages(
+def build_discrimination_prompt(
     question: str,
     candidates: List[Dict[str, Any]],
-) -> List[Dict[str, str]]:
+) -> str:
     lines = [
-        "Compare the provided candidates, considering both their current attributes and potential future outcomes (if applicable).",
+        "Compare the provided candidates, considering both current answer quality and reasoning consistency.",
         "First, present a detailed comparison, showing every step without skipping any.",
         "Then, provide a conclusion, selecting only one answer.",
         "",
@@ -496,11 +354,9 @@ def build_discrimination_messages(
     ]
     for index, candidate in enumerate(candidates, start=1):
         lines.append(f"## Candidate {index}")
-        candidate_text = candidate.get("comparison_trajectory") or candidate["trajectory"]
-        candidate_text = strip_graph_segments_for_discriminator(candidate_text)
-        lines.append(candidate_text.strip())
+        lines.append(candidate["comparison_trajectory"].strip())
         lines.append("----------------------------------------")
-        lines.append('')
+        lines.append("")
     lines.extend(
         [
             "Comparison:",
@@ -509,13 +365,15 @@ def build_discrimination_messages(
             "Select exactly one candidate.",
             "The last non-empty line of your response must be exactly: Candidate X",
             "Do not add any explanation after the final line.",
+            f"{SENTINEL}"
         ]
     )
-    return [{"role": "user", "content": "\n".join(lines).strip()}]
+    return "\n".join(lines).strip()
 
 
 def parse_best_candidate(response_text: str, num_candidates: int) -> Optional[int]:
     normalized_response = response_text.replace("**", "")
+    normalized_response = normalized_response.split(SENTINEL)[0].strip()
 
     non_empty_lines = [line.strip() for line in normalized_response.splitlines() if line.strip()]
     if non_empty_lines:
@@ -561,15 +419,15 @@ def parse_best_candidate(response_text: str, num_candidates: int) -> Optional[in
 
 
 
-def build_discrimination_repair_messages(response_text: str, num_candidates: int) -> List[Dict[str, str]]:
+def build_discrimination_repair_prompt(response_text: str, num_candidates: int) -> str:
     options = ", ".join(f"Candidate {index}" for index in range(1, num_candidates + 1))
     content = (
         "Extract the selected winner from the response below.\n"
         f"Return exactly one line and nothing else. It must be one of: {options}.\n\n"
         "Response:\n"
-        f"{response_text.strip()}"
+        f"{response_text.strip()}\n{SENTINEL}"
     )
-    return [{"role": "user", "content": content}]
+    return content
 
 
 def schedule_random_comparisons(
@@ -615,8 +473,6 @@ class VLLMDiscriminatorClient:
         self.lora_request = lora_request
         self.tokenizer = llm.get_tokenizer()
 
-    def build_prompt(self, messages: List[Dict[str, str]]) -> str:
-        return render_messages_without_system_prompt(messages)
 
     def batch_chat_completion(self, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not jobs:
@@ -628,12 +484,13 @@ class VLLMDiscriminatorClient:
 
         results: List[Optional[Dict[str, Any]]] = [None] * len(jobs)
         for (temperature, top_p, max_tokens), indexed_jobs in grouped_jobs.items():
-            prompts = [self.build_prompt(job["messages"]) for _, job in indexed_jobs]
+            prompts = [job["prompt"] for _, job in indexed_jobs]
             sampling_params = self.sampling_params_cls(
                 n=1,
                 temperature=temperature,
                 top_p=top_p,
                 max_tokens=max_tokens,
+                stop=[SENTINEL],
             )
             if self.lora_request is not None:
                 outputs = self.llm.generate(prompts, sampling_params, lora_request=self.lora_request, use_tqdm=False)
@@ -643,7 +500,6 @@ class VLLMDiscriminatorClient:
             for (job_index, job), prompt, output in zip(indexed_jobs, prompts, outputs):
                 response_text = output.outputs[0].text if output.outputs else ""
                 results[job_index] = {
-                    "messages": job["messages"],
                     "prompt": prompt,
                     "response": response_text,
                     "raw": {
@@ -659,7 +515,26 @@ class VLLMDiscriminatorClient:
 def resolve_adapter_path(
     script_dir: Path,
     adapter_path_arg: Optional[str],
+    hf_repo_id: Optional[str] = None,
+    hf_adapter_subpath: Optional[str] = None,
 ) -> Optional[Path]:
+    if hf_repo_id:
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError as error:
+            raise RuntimeError(
+                "huggingface_hub is required for --hf_repo_id. Install it with `pip install huggingface_hub`."
+            ) from error
+
+        snapshot_path = Path(snapshot_download(repo_id=hf_repo_id, repo_type="model"))
+        if hf_adapter_subpath:
+            adapter_path = snapshot_path / hf_adapter_subpath
+        else:
+            adapter_path = snapshot_path
+        if not adapter_path.exists():
+            raise RuntimeError(f"Resolved Hugging Face adapter path does not exist: {adapter_path}")
+        return adapter_path
+
     if adapter_path_arg is None:
         return None
     adapter_path_str = str(adapter_path_arg).strip()
@@ -669,46 +544,6 @@ def resolve_adapter_path(
     if adapter_path.is_absolute():
         return adapter_path
     return script_dir / adapter_path
-
-
-def resolve_model_path(
-    script_dir: Path,
-    model_arg: Optional[str],
-    hf_repo_id: Optional[str] = None,
-    hf_subpath: Optional[str] = None,
-) -> str:
-    if hf_repo_id:
-        try:
-            from huggingface_hub import snapshot_download
-        except ImportError as error:
-            raise RuntimeError(
-                "huggingface_hub is required for Hugging Face model loading. Install it with `pip install huggingface_hub`."
-            ) from error
-
-        snapshot_path = Path(snapshot_download(repo_id=hf_repo_id, repo_type="model"))
-        if hf_subpath:
-            model_path = snapshot_path / hf_subpath
-        else:
-            model_path = snapshot_path
-        if not model_path.exists():
-            raise RuntimeError(f"Resolved Hugging Face model path does not exist: {model_path}")
-        return str(model_path)
-
-    if model_arg is None:
-        raise RuntimeError("A base model must be provided via model argument or Hugging Face repo id.")
-
-    model_str = str(model_arg).strip()
-    if not model_str or model_str.lower() == "none":
-        raise RuntimeError("A base model must be provided via model argument or Hugging Face repo id.")
-
-    model_path = Path(model_str)
-    if model_path.is_absolute():
-        return str(model_path)
-
-    candidate_path = script_dir / model_path
-    if candidate_path.exists():
-        return str(candidate_path)
-    return model_str
 
 
 def generate_with_vllm(
@@ -778,7 +613,7 @@ def discriminate_candidates(
     target_keep_k: Optional[int] = None,
     force_rank: bool = False,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    effective_keep_k = args.keep_top_k if target_keep_k is None else target_keep_k
+    effective_keep_k = 1 if target_keep_k is None else target_keep_k
 
     if len(candidates) <= 1:
         return candidates, [], []
@@ -806,7 +641,7 @@ def discriminate_candidates(
                 "comparison_index": comparison_index,
                 "candidate_node_ids": shuffled_comparison,
                 "original_candidate_node_ids": comparison,
-                "messages": build_discrimination_messages(question, batch),
+                "prompt": build_discrimination_prompt(question, batch),
                 "temperature": args.discrimination_temperature,
                 "top_p": args.discrimination_top_p,
                 "max_tokens": args.discrimination_max_tokens,
@@ -827,7 +662,7 @@ def discriminate_candidates(
                 "round_index": round_index,
                 "comparison_index": log["comparison_index"],
                 "candidate_node_ids": candidate_node_ids,
-                "messages": build_discrimination_repair_messages(log["response"], len(candidate_node_ids)),
+                "prompt": build_discrimination_repair_prompt(log["response"], len(candidate_node_ids)),
                 "temperature": 0.0,
                 "top_p": 1.0,
                 "max_tokens": 32,
@@ -859,6 +694,55 @@ def discriminate_candidates(
     return kept, ranked_candidates, logs
 
 
+def generate_candidate_trajectories(
+    sample: Dict[str, Any],
+    llm: Any,
+    sampling_params: Any,
+    lora_request: Optional[Any],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    prompt = build_generation_prompt(sample["question"], "")
+    if lora_request is not None:
+        outputs = llm.generate([prompt], sampling_params, lora_request=lora_request, use_tqdm=False)
+    else:
+        outputs = llm.generate([prompt], sampling_params, use_tqdm=False)
+
+    generation_logs: List[Dict[str, Any]] = []
+    candidates: List[Dict[str, Any]] = []
+    seen_trajectories = set()
+    output = outputs[0]
+    for sample_index, candidate_output in enumerate(output.outputs):
+        trajectory = candidate_output.text.strip()
+        log = {
+            "call_type": "generation",
+            "round_index": 0,
+            "sample_index": sample_index,
+            "parent_node_id": None,
+            "prompt": prompt,
+            "response": candidate_output.text,
+            "finish_reason": candidate_output.finish_reason,
+            "stop_reason": getattr(candidate_output, "stop_reason", None),
+            "parsed_chunk": trajectory,
+        }
+        generation_logs.append(log)
+
+        if not trajectory or trajectory in seen_trajectories:
+            continue
+        seen_trajectories.add(trajectory)
+        candidates.append(
+            {
+                "node_id": len(candidates),
+                "parent_id": None,
+                "trajectory": trajectory,
+                "steps": len(parse_trajectory(trajectory)) - 1,
+                "terminal": has_final_answer(trajectory),
+                "score": 0,
+                "comparison_trajectory": trajectory,
+            }
+        )
+
+    return candidates, generation_logs
+
+
 def run_tree_search_for_sample(
     sample: Dict[str, Any],
     llm: Any,
@@ -868,149 +752,52 @@ def run_tree_search_for_sample(
     args: argparse.Namespace,
     rng: random.Random,
 ) -> Dict[str, Any]:
-    max_rounds = ceil(args.max_steps / args.search_per_N_steps)
-    next_node_id = 1
-
-    frontier: List[Dict[str, Any]] = [
+    candidates, generation_logs_all = generate_candidate_trajectories(
+        sample,
+        llm,
+        sampling_params,
+        lora_request,
+    )
+    all_nodes: List[Dict[str, Any]] = [
         {
-            "node_id": 0,
-            "parent_id": None,
-            "trajectory": "",
-            "steps": 0,
-            "terminal": False,
-            "score": 0,
+            "node_id": candidate["node_id"],
+            "parent_id": candidate["parent_id"],
+            "trajectory": candidate["trajectory"],
+            "steps": candidate["steps"],
+            "terminal": candidate["terminal"]
         }
+        for candidate in candidates
     ]
-    all_nodes: List[Dict[str, Any]] = [dict(frontier[0])]
-    generation_logs_all: List[Dict[str, Any]] = []
+
     discrimination_logs: List[Dict[str, Any]] = []
     round_summaries: List[Dict[str, Any]] = []
+    ranked_candidates: List[Dict[str, Any]] = candidates
+    best_node = {"trajectory": "", "steps": 0, "terminal": False, "node_id": None}
 
-    for round_index in range(max_rounds):
-        expandable = [
-            node for node in frontier
-            if (not node["terminal"]) and node["steps"] < args.max_steps
-        ]
-        if not expandable:
-            break
-
-        generation_logs = generate_with_vllm(
-            llm,
-            sampling_params,
+    if candidates:
+        kept, ranked_candidates, discrimination_logs = discriminate_candidates(
             sample["question"],
-            expandable,
-            lora_request,
-            round_index,
-        )
-        generation_logs_all.extend(generation_logs)
-
-        child_lookup: Dict[str, Dict[str, Any]] = {}
-        for log in generation_logs:
-            parent_node = next(node for node in expandable if node["node_id"] == log["parent_node_id"])
-            parsed_chunk, new_steps, terminal, future_preview = parse_generation_chunk(
-                log["response"],
-                parent_node["trajectory"],
-                args.search_per_N_steps,
-                args.future_N_steps,
-            )
-            log["parsed_chunk"] = parsed_chunk
-            log["new_steps"] = new_steps
-            log["terminal"] = terminal
-            log["future_preview"] = future_preview
-
-            if not parsed_chunk:
-                continue
-
-            trajectory = append_trajectory(parent_node["trajectory"], parsed_chunk)
-            if trajectory in child_lookup:
-                continue
-
-            child = {
-                "node_id": next_node_id,
-                "parent_id": parent_node["node_id"],
-                "trajectory": trajectory,
-                "future_preview": future_preview,
-                "steps": min(count_completed_steps(trajectory), args.max_steps),
-                "terminal": terminal or has_final_answer(trajectory),
-                "score": 0,
-            }
-            all_nodes.append(dict(child))
-            child["comparison_trajectory"] = strip_graph_segments_for_discriminator(
-                    append_trajectory(trajectory, future_preview) if future_preview else trajectory
-                )
-            child_lookup[trajectory] = child
-            
-            next_node_id += 1
-
-        children = list(child_lookup.values())
-        if not children:
-            break
-
-        kept, ranked_candidates, discrimination_logs_round = discriminate_candidates(
-            sample["question"],
-            children,
+            candidates,
             client,
             args,
             rng,
-            round_index,
+            round_index=0,
+            target_keep_k=1,
+            force_rank=True,
         )
-        discrimination_logs.extend(discrimination_logs_round)
-        frontier = [
-            {
-                "node_id": candidate["node_id"],
-                "parent_id": candidate["parent_id"],
-                "trajectory": candidate["trajectory"],
-                "steps": candidate["steps"],
-                "terminal": candidate["terminal"],
-                "score": candidate["score"],
-            }
-            for candidate in kept
-        ]
-
+        best_node = kept[0] if kept else best_node
         round_summaries.append(
             {
-                "round_index": round_index,
-                "expanded_node_ids": [node["node_id"] for node in expandable],
-                "num_generation_calls": len(generation_logs),
-                "num_children": len(children),
-                "num_discriminations": len(discrimination_logs_round),
-                "kept_node_ids": [node["node_id"] for node in frontier],
+                "round_index": 0,
+                "expanded_node_ids": [],
+                "num_generation_calls": len(generation_logs_all),
+                "num_children": len(candidates),
+                "num_discriminations": len(discrimination_logs),
+                "kept_node_ids": [best_node["node_id"]] if best_node.get("node_id") is not None else [],
                 "ranked_node_ids": [candidate["node_id"] for candidate in ranked_candidates],
             }
         )
 
-        if any(node["terminal"] for node in frontier):
-            terminal_frontier = [node for node in frontier if node["terminal"]]
-            if terminal_frontier:
-                frontier = terminal_frontier
-                break
-
-    if len(frontier) > 1:
-        final_kept, final_ranked, final_logs = discriminate_candidates(
-            sample["question"],
-            frontier,
-            client,
-            args,
-            rng,
-            round_index=max_rounds,
-            target_keep_k=1,
-            force_rank=True,
-        )
-        discrimination_logs.extend(final_logs)
-        frontier = final_kept[:1]
-        round_summaries.append(
-            {
-                "round_index": max_rounds,
-                "expanded_node_ids": [],
-                "num_generation_calls": 0,
-                "num_children": len(final_ranked),
-                "num_discriminations": len(final_logs),
-                "kept_node_ids": [node["node_id"] for node in frontier],
-                "ranked_node_ids": [candidate["node_id"] for candidate in final_ranked],
-            }
-        )
-
-    best_node = frontier[0] if frontier else {"trajectory": "", "steps": 0, "terminal": False, "node_id": None}
     final_trajectory = best_node["trajectory"].strip()
     evaluation = evaluate_prediction(sample, final_trajectory)
 
@@ -1018,7 +805,6 @@ def run_tree_search_for_sample(
         "id": sample.get("id"),
         "question": sample.get("question"),
         "gold_answer": evaluation["gold_answer"],
-        "gold_answer_normalized": evaluation["gold_answer_normalized"],
         "pred_answer": evaluation["pred_answer"],
         "correct": evaluation["correct"],
         "final_trajectory": final_trajectory,
@@ -1103,27 +889,20 @@ def main() -> None:
 
     output_path = Path(__file__).resolve().parent / args.output_path
     resume_output_path = resolve_optional_path(script_dir, args.resume_from_output) or output_path
-    generator_base_model = resolve_model_path(
+    generator_adapter_path = resolve_adapter_path(
         script_dir,
-        args.generator_base_model,
+        args.generator_adapter_path,
         hf_repo_id=args.generator_hf_repo_id,
-        hf_subpath=args.generator_hf_subpath,
+        hf_adapter_subpath=args.generator_hf_adapter_subpath,
     )
-    discriminator_base_model = resolve_model_path(
-        script_dir,
-        resolve_discriminator_base_model(args),
-        hf_repo_id=args.discriminator_hf_repo_id,
-        hf_subpath=args.discriminator_hf_subpath,
-    )
-    generator_adapter_path = resolve_adapter_path(script_dir, args.generator_adapter_path)
     discriminator_adapter_path = resolve_adapter_path(
         script_dir,
         args.discriminator_adapter_path,
+        hf_repo_id=args.discriminator_hf_repo_id,
+        hf_adapter_subpath=args.discriminator_hf_adapter_subpath,
     )
     if args.discriminator_tensor_parallel_size is None:
         args.discriminator_tensor_parallel_size = args.generator_tensor_parallel_size
-    args.generator_base_model = generator_base_model
-    args.discriminator_base_model = discriminator_base_model
     client = resolve_discriminator_client(
         args,
         LLM,
@@ -1140,7 +919,7 @@ def main() -> None:
             )
 
     llm = LLM(
-        model=generator_base_model,
+        model=args.generator_base_model,
         enable_lora=bool(generator_adapter_path),
         max_model_len=args.generation_max_model_len,
         tensor_parallel_size=args.generator_tensor_parallel_size,
@@ -1217,9 +996,7 @@ def main() -> None:
             payload = build_payload(
                 args,
                 args.data,
-                generator_base_model,
                 generator_adapter_path,
-                discriminator_base_model,
                 discriminator_adapter_path,
                 all_results,
                 current_results,
@@ -1241,9 +1018,7 @@ def main() -> None:
     payload = build_payload(
         args,
         args.data,
-        generator_base_model,
         generator_adapter_path,
-        discriminator_base_model,
         discriminator_adapter_path,
         all_results,
         final_results,

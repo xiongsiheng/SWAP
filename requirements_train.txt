@@ -7,3 +7,4 @@ datasets==2.20.0
 accelerate==0.33.0
 tqdm==4.67.3
 wandb==0.25.1
+bitsandbytes==0.43.3

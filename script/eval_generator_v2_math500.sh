@@ -1,0 +1,11 @@
+python src/eval_generator_v2_vllm.py \
+  --base_model meta-llama/Meta-Llama-3-8B-Instruct \
+  --hf_repo_id sxiong/SWAP_LLM_v2 \
+  --hf_adapter_subpath MATH_Gen_llama3_8B/final \
+  --data math500 \
+  --split test \
+  --output_path ../output/eval_gen_v2_math500_test.json \
+  --max_model_len 2560 \
+  --max_new_tokens 2048 \
+  --temperature 0 \
+  --top_p 1.0

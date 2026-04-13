@@ -8,15 +8,17 @@ from datasets import load_dataset
 from grading.grader import grade_answer
 
 
+SENTINEL = "<|resp|>"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate the generator with vLLM."
+        description="Evaluate the generator_v2 with vLLM."
     )
     parser.add_argument("--base_model", default=None)
     parser.add_argument("--adapter_path", default=None)
     parser.add_argument("--hf_repo_id", default=None)
-    parser.add_argument("--hf_subpath", default=None)
+    parser.add_argument("--hf_adapter_subpath", default=None)
     parser.add_argument("--data", default=None)
     parser.add_argument("--split", default="test")
     parser.add_argument("--output_path", default=None)
@@ -45,40 +47,31 @@ def load_test_samples(
             samples.append(sample)
             if limit is not None and len(samples) >= limit:
                 break
+    elif data == "math500":
+        dataset = load_dataset("sxiong/MATH-500", split=split)
+        for sample in dataset:
+            sample = dict(sample)
+            unique_id = str(sample.get("unique_id", "unknown"))
+            sample["id"] = unique_id.removesuffix(".json").replace("/", "_")
+            sample["question"] = sample.get("problem", "")
+            samples.append(sample)
+            if limit is not None and len(samples) >= limit:
+                break
     return samples
 
 
-def build_messages(question: str, cleaned_trajectory: str) -> List[Dict[str, str]]:
-    return [
-        {
-            "role": "user",
-            "content": (
-                "Solve the problem step by step using a structured reasoning format. Return ordered steps only.\n\n"
-                f"Problem:\n{question.strip()}"
-            ),
-        },
-        {
-            "role": "assistant",
-            "content": cleaned_trajectory,
-        },
-    ]
-
-
 def build_prompt(question: str, cleaned_trajectory: str, tokenizer=None) -> str:
-    messages = build_messages(question, cleaned_trajectory)
-    return (
-        "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
-        f"{messages[0]['content']}"
-        "\n\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        f"{messages[1]['content']}"
-        "<|eot_id|>"
+    prompt = (
+        f"{question.strip()}\n"
+        "Please reason step by step, and put your final answer within \\boxed{}.\n"
+        f"{SENTINEL}"
     )
+    if cleaned_trajectory:
+        prompt = f"{prompt}\n{cleaned_trajectory}"
+    return prompt
 
 def build_inference_prompt(question: str) -> str:
-    query_prompt = build_prompt(question.strip(), "")
-    query_prompt = query_prompt.removesuffix("<|eot_id|>")
-
-    return query_prompt
+    return build_prompt(question.strip(), "")
 
 
 
@@ -96,25 +89,62 @@ def normalize_answer(text: Any) -> str:
     return normalized
 
 
+def parse_boxed_result(s):
+    '''
+    Parse the boxed result.
+    '''
+    s = str(s)
+    # Find the start of the boxed content
+    start = s.find('\\boxed{')
+    if start == -1:
+        return s
+    
+    # Skip past '\\boxed{' to start content capture
+    start += len('\\boxed{')
+    brace_count = 1  # We start after finding the first '{'
+    content = []
+    
+    # Iterate over the string starting after '\boxed{'
+    for i in range(start, len(s)):
+        if s[i] == '{':
+            brace_count += 1
+        elif s[i] == '}':
+            brace_count -= 1
+        
+        # If brace_count returns to 0, we've found the matching '}'
+        if brace_count == 0:
+            return ''.join(content)
+        content.append(s[i])
+    
+    return s
+
+
 def extract_prediction_answer(response_text: str) -> str:
+    text = response_text.strip()
+
+    if '\\boxed' in text:
+        return parse_boxed_result(text)
+
     final_answer_patterns = [
         r'"Final answer"\s*:\s*"?([^"\n]+)"?',
         r"Final answer\s*:\s*([^\n]+)",
         r"####\s*([^\n]+)",
     ]
     for pattern in final_answer_patterns:
-        match = re.search(pattern, response_text, flags=re.IGNORECASE)
+        match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             return normalize_answer(match.group(1))
 
-    fallback_matches = re.findall(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?(?:/\d+)?", response_text)
+    fallback_matches = re.findall(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?(?:/\d+)?", text)
     if fallback_matches:
         return normalize_answer(fallback_matches[-1])
 
-    return normalize_answer(response_text)
+    return ""
 
 
-def evaluate_predictions(samples: List[Dict[str, Any]], responses: List[str]) -> Dict[str, Any]:
+def evaluate_predictions(
+    samples: List[Dict[str, Any]], responses: List[str]
+) -> Dict[str, Any]:
     results: List[Dict[str, Any]] = []
     correct = 0
 
@@ -150,44 +180,31 @@ def save_results(output_path: Path, payload: Dict[str, Any]) -> None:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
 
 
-def resolve_model_path(
-    script_dir: Path,
-    model_arg: Optional[str],
-    hf_repo_id: Optional[str] = None,
-    hf_subpath: Optional[str] = None,
-) -> str:
-    if hf_repo_id:
+def resolve_adapter_path(script_dir: Path, args: argparse.Namespace) -> Optional[Path]:
+    if args.hf_repo_id:
         try:
             from huggingface_hub import snapshot_download
         except ImportError as error:
             raise RuntimeError(
-                "huggingface_hub is required for Hugging Face model loading. Install it with `pip install huggingface_hub`."
+                "huggingface_hub is required for --hf_repo_id. Install it with `pip install huggingface_hub`."
             ) from error
 
-        snapshot_path = Path(snapshot_download(repo_id=hf_repo_id, repo_type="model"))
-        if hf_subpath:
-            model_path = snapshot_path / hf_subpath
+        snapshot_path = Path(snapshot_download(repo_id=args.hf_repo_id, repo_type="model"))
+        if args.hf_adapter_subpath:
+            adapter_path = snapshot_path / args.hf_adapter_subpath
         else:
-            model_path = snapshot_path
-        if not model_path.exists():
-            raise RuntimeError(f"Resolved Hugging Face model path does not exist: {model_path}")
-        return str(model_path)
+            adapter_path = snapshot_path
+        if not adapter_path.exists():
+            raise RuntimeError(f"Resolved Hugging Face adapter path does not exist: {adapter_path}")
+        return adapter_path
 
-    if model_arg is None:
-        raise RuntimeError("A base model must be provided via --base_model or --hf_repo_id.")
+    if not args.adapter_path:
+        return None
 
-    model_str = str(model_arg).strip()
-    if not model_str or model_str.lower() == "none":
-        raise RuntimeError("A base model must be provided via --base_model or --hf_repo_id.")
-
-    model_path = Path(model_str)
-    if model_path.is_absolute():
-        return str(model_path)
-
-    candidate_path = script_dir / model_path
-    if candidate_path.exists():
-        return str(candidate_path)
-    return model_str
+    adapter_path = Path(args.adapter_path)
+    if adapter_path.is_absolute():
+        return adapter_path
+    return script_dir / adapter_path
 
 
 def main() -> None:
@@ -206,20 +223,10 @@ def main() -> None:
     samples = load_test_samples(args.data, split=args.split, limit=args.limit)
     prompts = [build_inference_prompt(sample["question"]) for sample in samples]
 
-    model_path = resolve_model_path(
-        script_dir,
-        args.base_model,
-        hf_repo_id=args.hf_repo_id,
-        hf_subpath=args.hf_subpath,
-    )
-
-    adapter_path = (
-        script_dir / args.adapter_path
-        if args.adapter_path else None
-    )
+    adapter_path = resolve_adapter_path(script_dir, args)
 
     llm = LLM(
-        model=model_path,
+        model=args.base_model,
         enable_lora=bool(adapter_path),
         max_model_len=args.max_model_len,
         tensor_parallel_size=args.tensor_parallel_size,
@@ -243,10 +250,10 @@ def main() -> None:
 
     metrics = evaluate_predictions(samples, responses)
     payload = {
-        "base_model": model_path,
-        "hf_repo_id": args.hf_repo_id,
-        "hf_subpath": args.hf_subpath,
+        "base_model": args.base_model,
         "adapter_path": str(adapter_path),
+        "hf_repo_id": args.hf_repo_id,
+        "hf_adapter_subpath": args.hf_adapter_subpath,
         "data": args.data,
         "split": args.split,
         "total": metrics["total"],

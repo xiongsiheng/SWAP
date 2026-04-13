@@ -1,0 +1,11 @@
+python src/eval_generator_v2_vllm.py \
+  --base_model meta-llama/Meta-Llama-3-8B-Instruct \
+  --hf_repo_id sxiong/SWAP_LLM_v2 \
+  --hf_adapter_subpath GSM8K_Gen_llama3_8B/final \
+  --data gsm8k \
+  --split test \
+  --output_path ../output/eval_gen_v2_gsm8k_test.json \
+  --max_model_len 1280 \
+  --max_new_tokens 1024 \
+  --temperature 0 \
+  --top_p 1.0

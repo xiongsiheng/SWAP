@@ -47,9 +47,10 @@ The policy model is guided by this graph to propose the next action.
 
 ```
 SWAP/
+├── checkpoints/
 ├── model_weights/
 ├── output/
-├── script/
+├── scripts/
 └── src/
 ```
 
@@ -58,14 +59,20 @@ SWAP/
 ```bash
 git clone https://github.com/xiongsiheng/SWAP.git
 cd SWAP
+```
 
+For training:
+```bash
 # Create and activate the training environment
 conda create -n swap_train python=3.10 -y
 conda activate swap_train
 
 # Install training dependencies
 pip install -r requirements_train.txt
+```
 
+For evaluation:
+```bash
 # Create and activate the evaluation environment
 # vLLM is used to substantially accelerate evaluation
 conda create -n swap_eval python=3.10 -y
@@ -95,40 +102,116 @@ bash script/train_dpo_discrimintor_gsm8k.sh
 
 ## **Evaluation**
 
+(Optional) Download our checkpoints:
+```bash
+GENERATOR_CHECKPOINT=checkpoints/SWAP_v1_GSM8K_Gen_Llama3-8B
+DISCRIMINATOR_CHECKPOINT=checkpoints/SWAP_v1_GSM8K_Disc_Llama3-8B
+
+hf download sxiong/SWAP_v1_GSM8K_Gen_Llama3-8B \
+  --local-dir "${GENERATOR_CHECKPOINT}"
+hf download sxiong/SWAP_v1_GSM8K_Disc_Llama3-8B \
+  --local-dir "${DISCRIMINATOR_CHECKPOINT}"
+```
+
+Run the evaluation:
 ```bash
 # Evaluate the generator (without planning)
-bash script/eval_generator_gsm8k.sh
+bash scripts/eval_generator_gsm8k.sh "${GENERATOR_CHECKPOINT}"
 
 # Evaluate the full system
-bash script/eval_system_gsm8k.sh
+bash scripts/eval_system_gsm8k.sh "${GENERATOR_CHECKPOINT}" "${DISCRIMINATOR_CHECKPOINT}"
 
 # Optional: distributed evaluation
-CUDA_VISIBLE_DEVICES=0 NUM_SHARDS=4 SHARD_INDEX=0 bash script/eval_system_gsm8k.sh
-CUDA_VISIBLE_DEVICES=1 NUM_SHARDS=4 SHARD_INDEX=1 bash script/eval_system_gsm8k.sh
-CUDA_VISIBLE_DEVICES=2 NUM_SHARDS=4 SHARD_INDEX=2 bash script/eval_system_gsm8k.sh
-CUDA_VISIBLE_DEVICES=3 NUM_SHARDS=4 SHARD_INDEX=3 bash script/eval_system_gsm8k.sh
+CUDA_VISIBLE_DEVICES=0 NUM_SHARDS=4 SHARD_INDEX=0 bash scripts/eval_system_gsm8k.sh "${GENERATOR_CHECKPOINT}" "${DISCRIMINATOR_CHECKPOINT}"
+CUDA_VISIBLE_DEVICES=1 NUM_SHARDS=4 SHARD_INDEX=1 bash scripts/eval_system_gsm8k.sh "${GENERATOR_CHECKPOINT}" "${DISCRIMINATOR_CHECKPOINT}"
+CUDA_VISIBLE_DEVICES=2 NUM_SHARDS=4 SHARD_INDEX=2 bash scripts/eval_system_gsm8k.sh "${GENERATOR_CHECKPOINT}" "${DISCRIMINATOR_CHECKPOINT}"
+CUDA_VISIBLE_DEVICES=3 NUM_SHARDS=4 SHARD_INDEX=3 bash scripts/eval_system_gsm8k.sh "${GENERATOR_CHECKPOINT}" "${DISCRIMINATOR_CHECKPOINT}"
+```
 
-# Optional: download our checkpoints
+### SWAP_v2
+
+#### GSM8K
+
+Download our checkpoints:
+```bash
+GSM8K_V2_GENERATOR_CHECKPOINT=checkpoints/SWAP_v2_GSM8K_Gen_Llama3-8B-LoRA
+GSM8K_V2_DISCRIMINATOR_CHECKPOINT=checkpoints/SWAP_v2_GSM8K_Disc_Llama3-8B-LoRA
+
+hf download sxiong/SWAP_v2_GSM8K_Gen_Llama3-8B-LoRA \
+  --local-dir "${GSM8K_V2_GENERATOR_CHECKPOINT}"
+hf download sxiong/SWAP_v2_GSM8K_Disc_Llama3-8B-LoRA \
+  --local-dir "${GSM8K_V2_DISCRIMINATOR_CHECKPOINT}"
+```
+
+Run the evaluation:
+```bash
+# Evaluate the generator (without planning)
+bash scripts/eval_generator_v2_gsm8k.sh "${GSM8K_V2_GENERATOR_CHECKPOINT}"
+
+# Evaluate the full system
+bash scripts/eval_system_v2_gsm8k.sh "${GSM8K_V2_GENERATOR_CHECKPOINT}" "${GSM8K_V2_DISCRIMINATOR_CHECKPOINT}"
+```
+
+#### MATH500
+
+Download our checkpoints:
+```bash
+MATH500_V2_GENERATOR_CHECKPOINT=checkpoints/SWAP_v2_MATH500_Gen_Llama3-8B-LoRA
+MATH500_V2_DISCRIMINATOR_CHECKPOINT=checkpoints/SWAP_v2_MATH500_Disc_Llama3-8B-LoRA
+
+hf download sxiong/SWAP_v2_MATH500_Gen_Llama3-8B-LoRA \
+  --local-dir "${MATH500_V2_GENERATOR_CHECKPOINT}"
+hf download sxiong/SWAP_v2_MATH500_Disc_Llama3-8B-LoRA \
+  --local-dir "${MATH500_V2_DISCRIMINATOR_CHECKPOINT}"
+```
+
+Run the evaluation:
+```bash
+# Evaluate the generator (without planning)
+bash scripts/eval_generator_v2_math500.sh "${MATH500_V2_GENERATOR_CHECKPOINT}"
+
+# Evaluate the full system
+bash scripts/eval_system_v2_math500.sh "${MATH500_V2_GENERATOR_CHECKPOINT}" "${MATH500_V2_DISCRIMINATOR_CHECKPOINT}"
+```
+
+### MultiBench
+
+Supported datasests: GSM8K, MATH500, FOLIO, ReClor, HumanEval, MBPP
+
+```bash
+# Download our checkpoints:
+# - sxiong/SWAP_{dataset}_Gen_Llama3-8B-LoRA
+# - sxiong/SWAP_{dataset}_Disc_Llama3-8B-LoRA
+
+hf download sxiong/SWAP_FOLIO_Gen_Llama3-8B-LoRA \
+  --local-dir checkpoints/SWAP_FOLIO_Gen_Llama3-8B-LoRA
+hf download sxiong/SWAP_FOLIO_Disc_Llama3-8B-LoRA \
+  --local-dir checkpoints/SWAP_FOLIO_Disc_Llama3-8B-LoRA
+
+# Evaluate the generator and the full system:
+# - multibench/scripts/eval_system_{dataset}.sh
+
+bash multibench/scripts/eval_system_folio.sh
 ```
 
 For detailed descriptions of the available arguments and configuration options, please refer to the source code.
 
 
-## **Datasets & Checkpoints**
+## **Data & Checkpoints & Output**
 
-All datasets used in SWAP (GSM8K, MATH, FOLIO, ReClor, HumanEval, MBPP) with trajectory and process supervision are available [here](https://huggingface.co/datasets/sxiong/SWAP):
+All data used in SWAP (GSM8K, MATH, FOLIO, ReClor, HumanEval, MBPP) are available [here](https://huggingface.co/datasets/sxiong/SWAP):
 
 ```python
 from datasets import load_dataset
+dataset = load_dataset("sxiong/SWAP", "gsm8k")
+train_data = dataset["train"]
 
-dataset = load_dataset("sxiong/SWAP", "gsm8k_trajectory")
-print(dataset)
-split = dataset["train"]
+print(train_data)
 ```
 
-We also provide the corresponding [checkpoints](https://huggingface.co/sxiong/SWAP_LLM).
+We also provide the corresponding [checkpoints](https://huggingface.co/collections/sxiong/swap) and [output](https://huggingface.co/datasets/sxiong/SWAP_output).
 
-In addition, we release an updated version of [datasets](https://huggingface.co/datasets/sxiong/SWAP_v2) and provide the corresponding [checkpoints](https://huggingface.co/sxiong/SWAP_LLM_v2).
+In addition, we release an updated version (SWAP_v2) of [data](https://huggingface.co/datasets/sxiong/SWAP_v2) and [checkpoints](https://huggingface.co/collections/sxiong/swap).
 
 
 ## **Citation**
